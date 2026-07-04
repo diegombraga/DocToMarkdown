@@ -46,8 +46,9 @@ jobs:
           SRC="$HOME/Library/Application Support/DocToMarkdown/src/app.py"
           "$VENV_PY" "$SRC" &
           SERVER_PID=$!
-          for _ in $(seq 1 30); do
-            sleep 1
+          # torch + whisper + markitdown[all] can push cold import past 60s
+          for _ in $(seq 1 90); do
+            sleep 2
             if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
               curl -s http://127.0.0.1:5555/health; echo
               kill $SERVER_PID 2>/dev/null || true
@@ -66,8 +67,9 @@ jobs:
           SRC="$HOME/.local/share/DocToMarkdown/src/app.py"
           "$VENV_PY" "$SRC" &
           SERVER_PID=$!
-          for _ in $(seq 1 30); do
-            sleep 1
+          # torch + whisper + markitdown[all] can push cold import past 60s
+          for _ in $(seq 1 90); do
+            sleep 2
             if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
               curl -s http://127.0.0.1:5555/health; echo
               kill $SERVER_PID 2>/dev/null || true
@@ -86,8 +88,8 @@ jobs:
           $Src  = Join-Path $env:LOCALAPPDATA "DocToMarkdown\src\app.py"
           $proc = Start-Process -FilePath $Venv -ArgumentList $Src -PassThru -WindowStyle Hidden
           try {
-            for ($i = 0; $i -lt 30; $i++) {
-              Start-Sleep -Seconds 1
+            for ($i = 0; $i -lt 90; $i++) {
+              Start-Sleep -Seconds 2
               try {
                 $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5555/health -TimeoutSec 2
                 if ($r.StatusCode -eq 200) { Write-Host $r.Content; exit 0 }
