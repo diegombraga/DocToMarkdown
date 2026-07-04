@@ -222,13 +222,22 @@ def video_result(job_id):
 @app.route("/video/artifact/<job_id>/<path:name>")
 def video_artifact(job_id, name):
     mgr = get_manager()
-    p = mgr.artifact_path(job_id, name)
-    if p is None:
+    # Defense-in-depth: resolve the candidate path and confirm it stays inside
+    # the job's own artifacts dir. This catches URL-encoded traversal, symlink
+    # escapes, and any future refactor of artifact_path().
+    try:
+        base = (mgr.base_dir / job_id / "artifacts").resolve(strict=True)
+        candidate = (base / name).resolve(strict=True)
+        candidate.relative_to(base)  # raises ValueError if outside
+    except (FileNotFoundError, ValueError, OSError):
         return jsonify({"error": "arquivo não encontrado"}), 404
-    # Avoid path traversal
-    if ".." in name or name.startswith("/"):
-        return jsonify({"error": "nome inválido"}), 400
-    return send_file(str(p), as_attachment=True, download_name=name)
+    if not candidate.is_file():
+        return jsonify({"error": "arquivo não encontrado"}), 404
+    return send_file(
+        str(candidate),
+        as_attachment=True,
+        download_name=Path(name).name,  # strip any dir prefix in the filename
+    )
 
 
 # ---------------------------------------------------------------------------

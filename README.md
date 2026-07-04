@@ -131,6 +131,22 @@ Via markitdown:
 PORT=8080 doc2md-server
 ```
 
+## Security notes
+
+DocToMarkdown is designed for **single-user local use**:
+
+- The Flask server binds to `127.0.0.1` by default. Nobody outside your machine can reach it. Docker containers bind to `0.0.0.0` internally so the mapped port works, but you still choose who can reach the container.
+- API keys pasted through the ⚙ Configurações modal are saved to `~/.config/DocToMarkdown/keys.json` with `chmod 0600` (only your user can read). If you set an env var (`ANTHROPIC_API_KEY` etc.) at launch, it takes precedence and cannot be overwritten via the UI.
+- Files uploaded through the file tab and videos processed via the URL tab are stored in your OS temp dir and cleaned up 30 minutes after the job finishes.
+
+**If you intentionally expose the app to a LAN** (e.g. run behind a reverse proxy, or set `HOST=0.0.0.0`), be aware:
+
+- The `/video/preview` and `/video/process` endpoints will fetch any URL you paste — including internal hosts, cloud metadata endpoints, etc. A user with LAN access could use this to probe internal services. Add your own auth or IP whitelist at the proxy layer before exposing.
+- There is no rate limiting. A malicious client could spam expensive jobs (video downloads, Whisper transcription, vision LLM calls that hit your paid keys).
+- The `/settings/keys` endpoints let anyone with access to the port view provider status and write keys. Firewall the port or don't expose it.
+
+For the intended local single-user use case, none of the above apply.
+
 ## Uninstall
 
 ```bash
