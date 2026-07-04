@@ -4,7 +4,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue) ![macOS](https://img.shields.io/badge/macOS-supported-success) ![Linux](https://img.shields.io/badge/Linux-supported-success) ![Windows](https://img.shields.io/badge/Windows-supported-success) ![Docker](https://img.shields.io/badge/Docker-ready-success)
 
-Drop a PDF (even a scanned one), a DOCX, a spreadsheet, an image, an EPUB, or an audio file — get clean Markdown ready to paste into an LLM, a notes app, or a wiki. Everything runs on your machine. No API keys. No uploads. No subscriptions.
+Drop a PDF (even a scanned one), a DOCX, a spreadsheet, an image, an EPUB, or an audio file — get clean Markdown ready to paste into an LLM, a notes app, or a wiki. Or paste a **YouTube / Vimeo URL** and get a **full-context Markdown**: transcript (via subtitle or local Whisper) + text visible on screen (Tesseract OCR of key frames) + optional AI visual description of every scene. Everything runs on your machine. No API keys required (except for optional visual description). No uploads. No subscriptions.
 
 ## Why
 
@@ -23,10 +23,13 @@ Everything is local, everything is free, everything is MIT-licensed.
 - **Drag-and-drop web UI** with live preview, copy, and `.md` download
 - **Automatic OCR** for scanned PDFs (opt-in per file)
 - **Multi-language OCR**: Portuguese, English, Spanish, French, Italian, German out of the box — 100+ available
-- **Supports**: PDF, DOCX, PPTX, XLSX, PNG/JPG, HTML, EPUB, MP3/WAV/M4A (transcription), YouTube URLs, and more
+- **Video → full-context Markdown**: paste any YouTube/Vimeo/etc. URL, get transcript + on-screen text + (optional) scene-by-scene visual description
+- **Local Whisper transcription** when native subtitles aren't available
+- **BYOK vision LLM**: optionally plug your Anthropic / OpenAI / Gemini key for scene descriptions
+- **Supports**: PDF, DOCX, PPTX, XLSX, PNG/JPG, HTML, EPUB, MP3/WAV/M4A (transcription), and video URLs from 1000+ sites
 - **Cross-platform**: macOS `.app`, Linux `.desktop`, Windows `.lnk`, or Docker
 - **Claude Code skill** so any Claude Code user can invoke the pipeline via natural language
-- **100% local** — no file leaves your machine
+- **100% local** — no file leaves your machine (except optional vision LLM calls with your own key)
 
 ## Install
 
@@ -55,8 +58,21 @@ docker compose up
 
 ## Usage
 
-### 1. Desktop app
-Double-click **DocToMarkdown** (macOS `/Applications`, Linux app menu, Windows Start Menu). Your browser opens at `http://127.0.0.1:5555`. Drag a file, pick OCR languages if it's a scanned PDF, click **Converter**, copy or download the Markdown.
+### 1. Desktop app — file mode
+Double-click **DocToMarkdown** (macOS `/Applications`, Linux app menu, Windows Start Menu). Your browser opens at `http://127.0.0.1:5555`. On the **📄 Arquivo** tab: drag a file, pick OCR languages if it's a scanned PDF, click **Converter**, copy or download the Markdown.
+
+### 1b. Desktop app — video mode
+Switch to the **🎬 Vídeo / URL** tab. Paste a URL, click **Prever** to load the metadata card, choose options (download MP4, download MP3, subtitle vs. Whisper, vision provider), then **Processar**. A live progress bar shows each stage: download → transcript → frame extraction → OCR → optional vision → merge. Result includes the full Markdown plus downloadable artifacts.
+
+**Optional AI vision** (BYOK — bring your own key): set one of these env vars before launching to enable scene-by-scene visual descriptions.
+
+| Provider | Env var | Default model | Approx. cost per 30-min video |
+|---|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` | ~$0.30-0.50 |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | ~$0.05-0.10 |
+| Google Gemini | `GEMINI_API_KEY` | `gemini-2.0-flash` | ~$0.02-0.05 |
+
+Costs are estimates for typical videos with ~50 scene keyframes. Model overrides via `DTM_ANTHROPIC_MODEL` / `DTM_OPENAI_MODEL` / `DTM_GEMINI_MODEL`.
 
 ### 2. Claude Code skill
 Install the skill (bundled with the installers, or manually):
@@ -80,21 +96,19 @@ doc2md --ocr --lang por+eng scan.pdf
 
 ## How it works
 
+**File pipeline:**
 ```
-              ┌────────────────────────┐
-   Any file → │   type detection       │
-              └────────────┬───────────┘
-                           ▼
-              ┌────────────────────────┐
-      PDF? →  │  scanned? (no text)    │  → yes → ocrmypdf (Tesseract OCR)
-              └────────────┬───────────┘                    │
-                           ▼                                ▼
-              ┌────────────────────────────────────────────┐
-              │             markitdown                     │
-              │  (Microsoft, MIT — handles everything)     │
-              └────────────┬───────────────────────────────┘
-                           ▼
-                     Clean Markdown
+   Any file → type detection → [if scanned PDF: ocrmypdf/Tesseract] → markitdown → Markdown
+```
+
+**Video pipeline:**
+```
+   Video URL → yt-dlp (metadata, MP4, MP3, subs)
+             → [subs? use them : Whisper local]  ─┐
+             → PySceneDetect (scene cuts)         │
+             → Tesseract OCR on keyframes         ├─→ merged Markdown
+             → [vision LLM? describe each scene]  │       with timeline
+                                                   ─┘   (🎤 fala + 🖥 tela + 👁 cena)
 ```
 
 ## Supported formats

@@ -1,8 +1,8 @@
-"""DocToMarkdown — Flask backend wrapping markitdown + ocrmypdf.
+"""DocToMarkdown — Flask backend wrapping markitdown + ocrmypdf + video pipeline.
 
 Cross-platform (macOS, Linux, Windows). Requires the following binaries on
-PATH: markitdown (Python package, shipped via requirements.txt) and ocrmypdf
-(installed system-wide by the platform installer).
+PATH: markitdown (Python package, shipped via requirements.txt), ocrmypdf,
+ffmpeg, tesseract (installed system-wide by the platform installer).
 """
 
 import os
@@ -13,10 +13,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, send_file
+
+from video import get_manager, vision
 
 MARKITDOWN = shutil.which("markitdown")
 OCRMYPDF = shutil.which("ocrmypdf")
+FFMPEG = shutil.which("ffmpeg")
+TESSERACT = shutil.which("tesseract")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
@@ -33,6 +37,9 @@ def health():
         {
             "markitdown": bool(MARKITDOWN),
             "ocrmypdf": bool(OCRMYPDF),
+            "ffmpeg": bool(FFMPEG),
+            "tesseract": bool(TESSERACT),
+            "vision_providers": vision.available_providers(),
             "markitdown_path": MARKITDOWN or "",
             "ocrmypdf_path": OCRMYPDF or "",
         }
@@ -102,6 +109,95 @@ def convert():
                 "chars": len(proc.stdout),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Video pipeline routes
+# ---------------------------------------------------------------------------
+
+
+@app.route("/video/preview")
+def video_preview():
+    from video import downloader
+
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "parâmetro 'url' obrigatório"}), 400
+    try:
+        meta = downloader.probe(url)
+    except Exception as e:  # noqa: BLE001
+        return (
+            jsonify({"error": f"não foi possível obter metadata: {e}"}),
+            400,
+        )
+    return jsonify(meta.to_dict())
+
+
+@app.route("/video/process", methods=["POST"])
+def video_process():
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "campo 'url' obrigatório"}), 400
+    if not FFMPEG:
+        return jsonify({"error": "ffmpeg não está instalado"}), 500
+
+    options = {
+        "output_video": bool(data.get("output_video")),
+        "output_audio": bool(data.get("output_audio")),
+        "transcript_mode": data.get("transcript_mode", "auto"),
+        "whisper_model": data.get("whisper_model", "base"),
+        "vision_provider": data.get("vision_provider"),
+    }
+    job_id = get_manager().submit(url, options)
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/video/status/<job_id>")
+def video_status(job_id):
+    mgr = get_manager()
+
+    def stream():
+        for chunk in mgr.events(job_id):
+            yield chunk
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/video/result/<job_id>")
+def video_result(job_id):
+    mgr = get_manager()
+    job = mgr.get(job_id)
+    if not job:
+        return jsonify({"error": "job desconhecido"}), 404
+    if job.error:
+        return jsonify({"error": job.error}), 500
+    if not job.result:
+        return jsonify({"error": "job ainda em andamento", "stage": job.stage}), 425
+    return jsonify(job.result)
+
+
+@app.route("/video/artifact/<job_id>/<path:name>")
+def video_artifact(job_id, name):
+    mgr = get_manager()
+    p = mgr.artifact_path(job_id, name)
+    if p is None:
+        return jsonify({"error": "arquivo não encontrado"}), 404
+    # Avoid path traversal
+    if ".." in name or name.startswith("/"):
+        return jsonify({"error": "nome inválido"}), 400
+    return send_file(str(p), as_attachment=True, download_name=name)
+
+
+# ---------------------------------------------------------------------------
 
 
 def _pick_port(preferred: int) -> int:

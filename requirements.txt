@@ -1,2 +1,13 @@
 flask>=3.0
 markitdown[all]>=0.1.6
+
+# Video pipeline
+yt-dlp>=2024.11.0
+openai-whisper>=20240930
+scenedetect>=0.6.4
+Pillow>=10.0
+
+# Vision LLM providers (BYOK — used only if API key present in env)
+anthropic>=0.40.0
+openai>=1.50.0
+google-generativeai>=0.8.0

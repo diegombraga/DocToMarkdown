@@ -17,6 +17,7 @@
       --accent-2: #4c8dff;
       --danger: #ff6b6b;
       --ok: #4ade80;
+      --warn: #f5a524;
     }
     * { box-sizing: border-box; }
     body {
@@ -37,6 +38,29 @@
       padding: 20px;
       margin-bottom: 16px;
     }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--panel-2);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+      width: fit-content;
+    }
+    .tab {
+      background: transparent;
+      color: var(--muted);
+      border: 0;
+      padding: 8px 16px;
+      border-radius: 7px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .tab.active { background: var(--panel); color: var(--text); }
+    .pane { display: none; }
+    .pane.active { display: block; }
     .dropzone {
       border: 2px dashed var(--border);
       border-radius: 12px;
@@ -55,16 +79,17 @@
     @media (max-width: 640px) { .options { grid-template-columns: 1fr; } }
     label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
     label.field span { color: var(--text); }
-    input[type=text], select {
+    input[type=text], input[type=url], select {
       background: var(--panel-2);
       color: var(--text);
       border: 1px solid var(--border);
       padding: 9px 10px;
       border-radius: 8px;
       font-size: 14px;
+      width: 100%;
     }
     .row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-    .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+    .row input[type=checkbox], .row input[type=radio] { width: 16px; height: 16px; accent-color: var(--accent); }
     .row .desc { color: var(--muted); font-size: 12px; }
     .actions { display: flex; gap: 10px; margin-top: 16px; }
     button {
@@ -85,7 +110,8 @@
     .status.ok { color: var(--ok); }
     .status.err { color: var(--danger); white-space: pre-wrap; }
     .status.busy { color: var(--accent); }
-    .result-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .status.warn { color: var(--warn); }
+    .result-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
     .result-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
     .meta { color: var(--muted); font-size: 12px; }
     pre {
@@ -116,7 +142,69 @@
       user-select: none;
     }
     .chip.on { border-color: var(--accent); color: var(--accent); background: rgba(110,168,254,.08); }
+    .chip.readonly { cursor: default; }
+    .chip.readonly.off { opacity: 0.4; }
     .hidden { display: none; }
+
+    /* Video preview card */
+    .yt-preview {
+      display: flex;
+      gap: 14px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 12px;
+    }
+    .yt-preview img {
+      width: 160px;
+      height: 90px;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #000;
+    }
+    .yt-preview .info { flex: 1; min-width: 0; font-size: 13px; }
+    .yt-preview .info h3 { margin: 0 0 4px 0; font-size: 15px; color: var(--text); font-weight: 600; line-height: 1.3; }
+    .yt-preview .info .subline { color: var(--muted); font-size: 12px; }
+    .yt-preview .badges { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: rgba(110,168,254,.12);
+      color: var(--accent);
+      border: 1px solid rgba(110,168,254,.3);
+    }
+    .badge.warn { background: rgba(245,165,36,.12); color: var(--warn); border-color: rgba(245,165,36,.3); }
+    .badge.off { background: transparent; color: var(--muted); border-color: var(--border); }
+
+    /* Progress */
+    .progress-wrap { margin-top: 14px; }
+    .progress-bar {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      height: 100%;
+      width: 0%;
+      transition: width .3s;
+    }
+    .progress-text { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+    /* Disclaimer */
+    .disclaimer {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: rgba(245,165,36,.05);
+      border-left: 2px solid var(--warn);
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -124,53 +212,137 @@
     <header>
       <div>
         <h1>DocToMarkdown</h1>
-        <div class="subtitle">markitdown + ocrmypdf · converte PDF, DOCX, PPTX, XLSX, imagens, HTML, áudio&hellip; em Markdown</div>
+        <div class="subtitle">markitdown + ocrmypdf + yt-dlp + Whisper · qualquer arquivo ou vídeo → Markdown</div>
       </div>
     </header>
 
-    <div class="card">
-      <div id="dropzone" class="dropzone">
-        <strong>Arraste um arquivo aqui</strong> · ou clique para escolher
-        <div class="hint">Máximo 500 MB · PDF, DOCX, PPTX, XLSX, imagens, HTML, EPUB, áudio&hellip;</div>
-        <div class="filename" id="filename"></div>
-      </div>
-      <input type="file" id="file" />
+    <div class="tabs">
+      <button class="tab active" data-tab="arquivo">📄 Arquivo</button>
+      <button class="tab" data-tab="video">🎬 Vídeo / URL</button>
     </div>
 
-    <div class="card">
-      <div class="row" style="margin-bottom: 12px;">
-        <input type="checkbox" id="use_ocr" />
-        <label for="use_ocr"><span>Rodar OCR no PDF antes de converter</span></label>
-      </div>
-      <div class="row" style="margin-bottom: 6px;">
-        <input type="checkbox" id="force_ocr" />
-        <label for="force_ocr">
-          Forçar OCR <span class="desc">(refaz mesmo se o PDF já tem texto)</span>
-        </label>
+    <!-- ═══════════════════ TAB ARQUIVO ═══════════════════ -->
+    <div class="pane active" id="pane-arquivo">
+      <div class="card">
+        <div id="dropzone" class="dropzone">
+          <strong>Arraste um arquivo aqui</strong> · ou clique para escolher
+          <div class="hint">Máximo 500 MB · PDF, DOCX, PPTX, XLSX, imagens, HTML, EPUB, áudio&hellip;</div>
+          <div class="filename" id="filename"></div>
+        </div>
+        <input type="file" id="file" />
       </div>
 
-      <div style="margin-top: 14px;">
+      <div class="card">
+        <div class="row" style="margin-bottom: 12px;">
+          <input type="checkbox" id="use_ocr" />
+          <label for="use_ocr"><span>Rodar OCR no PDF antes de converter</span></label>
+        </div>
+        <div class="row" style="margin-bottom: 6px;">
+          <input type="checkbox" id="force_ocr" />
+          <label for="force_ocr">
+            Forçar OCR <span class="desc">(refaz mesmo se o PDF já tem texto)</span>
+          </label>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <label class="field">
+            <span>Idiomas do OCR</span>
+            <div class="lang-chips" id="chips">
+              <span class="chip on" data-l="por">Português</span>
+              <span class="chip on" data-l="eng">Inglês</span>
+              <span class="chip" data-l="spa">Espanhol</span>
+              <span class="chip" data-l="fra">Francês</span>
+              <span class="chip" data-l="ita">Italiano</span>
+              <span class="chip" data-l="deu">Alemão</span>
+            </div>
+            <input type="text" id="langs" value="por+eng" style="margin-top: 8px;" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="convert" disabled>Converter</button>
+          <button class="ghost" id="reset">Limpar</button>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ TAB VÍDEO ═══════════════════ -->
+    <div class="pane" id="pane-video">
+      <div class="card">
         <label class="field">
-          <span>Idiomas do OCR</span>
-          <div class="lang-chips" id="chips">
-            <span class="chip on" data-l="por">Português</span>
-            <span class="chip on" data-l="eng">Inglês</span>
-            <span class="chip" data-l="spa">Espanhol</span>
-            <span class="chip" data-l="fra">Francês</span>
-            <span class="chip" data-l="ita">Italiano</span>
-            <span class="chip" data-l="deu">Alemão</span>
-          </div>
-          <input type="text" id="langs" value="por+eng" style="margin-top: 8px;" />
+          <span>URL do vídeo</span>
+          <input type="url" id="video-url" placeholder="https://www.youtube.com/watch?v=..." />
         </label>
+        <div class="disclaimer">
+          ⚠ Você é responsável por respeitar direitos autorais e os Termos de Uso da plataforma de origem.
+        </div>
+        <div class="actions">
+          <button id="preview-btn">Prever</button>
+          <button class="ghost" id="video-reset">Limpar</button>
+        </div>
+        <div id="preview-area"></div>
+        <div class="status" id="preview-status"></div>
       </div>
 
-      <div class="actions">
-        <button id="convert" disabled>Converter</button>
-        <button class="ghost" id="reset">Limpar</button>
+      <div class="card hidden" id="video-options-card">
+        <div style="font-size: 14px; margin-bottom: 12px; font-weight: 600;">Opções de processamento</div>
+
+        <div class="row" style="margin-bottom: 8px;">
+          <input type="checkbox" id="opt-video" />
+          <label for="opt-video"><span>Baixar vídeo (MP4)</span></label>
+        </div>
+        <div class="row" style="margin-bottom: 14px;">
+          <input type="checkbox" id="opt-audio" />
+          <label for="opt-audio"><span>Baixar áudio (MP3)</span></label>
+        </div>
+
+        <label class="field" style="margin-bottom: 14px;">
+          <span>Fonte da transcrição</span>
+          <select id="opt-transcript">
+            <option value="auto">Automático (usa legenda se existir, senão Whisper)</option>
+            <option value="subs">Só legenda nativa (falha se não tiver)</option>
+            <option value="whisper">Whisper local (sempre re-transcreve, mais fiel)</option>
+          </select>
+        </label>
+
+        <label class="field hidden" id="whisper-model-field" style="margin-bottom: 14px;">
+          <span>Modelo Whisper</span>
+          <select id="opt-whisper-model">
+            <option value="tiny">tiny (40MB, mais rápido, qualidade baixa)</option>
+            <option value="base" selected>base (150MB, boa qualidade)</option>
+            <option value="small">small (500MB, muito boa)</option>
+            <option value="medium">medium (1.5GB, excelente — lento)</option>
+          </select>
+        </label>
+
+        <label class="field" style="margin-bottom: 6px;">
+          <span>Análise visual dos frames</span>
+          <select id="opt-vision">
+            <option value="none">Nenhuma (só OCR do texto na tela)</option>
+            <option value="anthropic">Anthropic — Claude Sonnet 4.5 (vision)</option>
+            <option value="openai">OpenAI — GPT-4o mini</option>
+            <option value="gemini">Google — Gemini 2.0 Flash</option>
+          </select>
+        </label>
+        <div class="desc" id="vision-hint" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
+          Requer chave de API no environment (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY).
+        </div>
+
+        <div class="actions">
+          <button id="process-btn">Processar</button>
+        </div>
+
+        <div class="progress-wrap hidden" id="video-progress">
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <div class="progress-text" id="progress-text">Iniciando…</div>
+        </div>
+
+        <div class="status" id="video-status"></div>
       </div>
-      <div class="status" id="status"></div>
     </div>
 
+    <!-- ═══════════════════ RESULT ═══════════════════ -->
     <div class="card hidden" id="resultCard">
       <div class="result-head">
         <h2>Resultado</h2>
@@ -180,9 +352,10 @@
           <button id="download">Baixar .md</button>
         </div>
       </div>
+      <div id="artifacts-list" class="hidden" style="margin-bottom: 10px; font-size: 13px; color: var(--muted);"></div>
       <pre id="output"></pre>
       <details id="logDetails" class="hidden">
-        <summary>Log do OCR</summary>
+        <summary>Log</summary>
         <pre id="log"></pre>
       </details>
     </div>
@@ -193,7 +366,59 @@ const $ = (id) => document.getElementById(id);
 let currentFile = null;
 let currentMd = "";
 let currentName = "output.md";
+let visionAvailability = {};
 
+// ---------------- Tab switching ----------------
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+    $("pane-" + t.dataset.tab).classList.add("active");
+    $("resultCard").classList.add("hidden");
+  });
+});
+
+// ---------------- Fetch health for vision availability ----------------
+fetch("/health").then(r => r.json()).then(h => {
+  visionAvailability = h.vision_providers || {};
+  updateVisionHint();
+}).catch(() => {});
+
+function updateVisionHint() {
+  const provider = $("opt-vision").value;
+  const hint = $("vision-hint");
+  if (provider === "none") {
+    hint.textContent = "Frames terão só OCR do texto visível. Escolha um provider para descrição visual completa.";
+    hint.style.color = "var(--muted)";
+    return;
+  }
+  if (visionAvailability[provider]) {
+    hint.textContent = "✓ API key detectada. Descrições visuais serão geradas.";
+    hint.style.color = "var(--ok)";
+  } else {
+    const env = provider === "anthropic" ? "ANTHROPIC_API_KEY"
+              : provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY";
+    hint.textContent = `⚠ ${env} não configurada — será pulado.`;
+    hint.style.color = "var(--warn)";
+  }
+}
+$("opt-vision").addEventListener("change", updateVisionHint);
+
+$("opt-transcript").addEventListener("change", (e) => {
+  const field = $("whisper-model-field");
+  if (e.target.value === "whisper" || e.target.value === "auto") {
+    field.classList.remove("hidden");
+  } else {
+    field.classList.add("hidden");
+  }
+});
+// Show whisper model by default (auto mode)
+$("whisper-model-field").classList.remove("hidden");
+
+// ================================================================
+// ARQUIVO tab
+// ================================================================
 const dz = $("dropzone");
 const fileInput = $("file");
 const filenameEl = $("filename");
@@ -203,11 +428,6 @@ const useOcr = $("use_ocr");
 const forceOcr = $("force_ocr");
 const langsInput = $("langs");
 const chips = document.querySelectorAll(".chip");
-const resultCard = $("resultCard");
-const output = $("output");
-const metaEl = $("meta");
-const logDetails = $("logDetails");
-const logEl = $("log");
 
 dz.addEventListener("click", () => fileInput.click());
 ["dragenter","dragover"].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add("drag"); }));
@@ -240,7 +460,7 @@ $("reset").addEventListener("click", () => {
   filenameEl.textContent = "";
   convertBtn.disabled = true;
   statusEl.textContent = "";
-  resultCard.classList.add("hidden");
+  $("resultCard").classList.add("hidden");
 });
 
 convertBtn.addEventListener("click", async () => {
@@ -248,7 +468,7 @@ convertBtn.addEventListener("click", async () => {
   convertBtn.disabled = true;
   statusEl.textContent = useOcr.checked ? "Rodando OCR + convertendo (pode demorar)…" : "Convertendo…";
   statusEl.className = "status busy";
-  resultCard.classList.add("hidden");
+  $("resultCard").classList.add("hidden");
 
   const fd = new FormData();
   fd.append("file", currentFile);
@@ -265,17 +485,10 @@ convertBtn.addEventListener("click", async () => {
       convertBtn.disabled = false;
       return;
     }
-    currentMd = data.markdown || "";
-    currentName = data.filename || "output.md";
-    output.textContent = currentMd;
-    metaEl.textContent = `${data.chars.toLocaleString("pt-BR")} caracteres` + (data.did_ocr ? " · OCR aplicado" : "");
-    if (data.ocr_log) {
-      logEl.textContent = data.ocr_log;
-      logDetails.classList.remove("hidden");
-    } else {
-      logDetails.classList.add("hidden");
-    }
-    resultCard.classList.remove("hidden");
+    showResult(data.markdown || "", data.filename || "output.md",
+               `${(data.chars||0).toLocaleString("pt-BR")} caracteres` +
+               (data.did_ocr ? " · OCR aplicado" : ""),
+               data.ocr_log, null);
     statusEl.className = "status ok";
     statusEl.textContent = "Pronto.";
   } catch (e) {
@@ -285,6 +498,171 @@ convertBtn.addEventListener("click", async () => {
     convertBtn.disabled = false;
   }
 });
+
+// ================================================================
+// VÍDEO tab
+// ================================================================
+let currentMeta = null;
+let currentEventSource = null;
+
+$("video-reset").addEventListener("click", () => {
+  $("video-url").value = "";
+  $("preview-area").innerHTML = "";
+  $("preview-status").textContent = "";
+  $("video-options-card").classList.add("hidden");
+  $("video-progress").classList.add("hidden");
+  $("video-status").textContent = "";
+  currentMeta = null;
+  if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
+});
+
+$("preview-btn").addEventListener("click", async () => {
+  const url = $("video-url").value.trim();
+  if (!url) return;
+  $("preview-status").textContent = "Buscando metadata…";
+  $("preview-status").className = "status busy";
+  $("preview-area").innerHTML = "";
+  $("video-options-card").classList.add("hidden");
+
+  try {
+    const res = await fetch(`/video/preview?url=${encodeURIComponent(url)}`);
+    const meta = await res.json();
+    if (!res.ok) throw new Error(meta.error || "Falha");
+    currentMeta = meta;
+    renderPreview(meta);
+    $("video-options-card").classList.remove("hidden");
+    $("preview-status").textContent = "";
+  } catch (e) {
+    $("preview-status").textContent = "Erro: " + e.message;
+    $("preview-status").className = "status err";
+  }
+});
+
+function renderPreview(meta) {
+  const mins = Math.floor(meta.duration_s / 60);
+  const secs = meta.duration_s % 60;
+  const dur = `${mins}:${String(secs).padStart(2,"0")}`;
+  const subBadge = meta.has_manual_subs
+    ? '<span class="badge">Legenda manual</span>'
+    : (meta.has_auto_subs
+        ? '<span class="badge warn">Só legenda auto-gerada</span>'
+        : '<span class="badge off">Sem legenda — usará Whisper</span>');
+  const chapters = (meta.chapters||[]).length
+    ? `<span class="badge">${meta.chapters.length} chapters</span>` : "";
+
+  $("preview-area").innerHTML = `
+    <div class="yt-preview">
+      ${meta.thumbnail_url ? `<img src="${meta.thumbnail_url}" alt="">` : ""}
+      <div class="info">
+        <h3>${escapeHtml(meta.title)}</h3>
+        <div class="subline">${escapeHtml(meta.uploader)} · ${dur} · ${meta.upload_date || ""}</div>
+        <div class="badges">${subBadge}${chapters}</div>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s||"").replace(/[<>&"']/g, c =>
+    ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+$("process-btn").addEventListener("click", async () => {
+  if (!currentMeta) return;
+  const payload = {
+    url: currentMeta.url,
+    output_video: $("opt-video").checked,
+    output_audio: $("opt-audio").checked,
+    transcript_mode: $("opt-transcript").value,
+    whisper_model: $("opt-whisper-model").value,
+    vision_provider: $("opt-vision").value === "none" ? null : $("opt-vision").value,
+  };
+
+  $("process-btn").disabled = true;
+  $("video-status").textContent = "";
+  $("video-progress").classList.remove("hidden");
+  $("progress-fill").style.width = "0%";
+  $("progress-text").textContent = "Enviando job…";
+  $("resultCard").classList.add("hidden");
+
+  try {
+    const res = await fetch("/video/process", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao submeter job");
+    subscribeToJob(data.job_id);
+  } catch (e) {
+    $("video-status").textContent = "Erro: " + e.message;
+    $("video-status").className = "status err";
+    $("process-btn").disabled = false;
+    $("video-progress").classList.add("hidden");
+  }
+});
+
+function subscribeToJob(jobId) {
+  if (currentEventSource) currentEventSource.close();
+  const es = new EventSource(`/video/status/${jobId}`);
+  currentEventSource = es;
+  es.onmessage = async (ev) => {
+    let data;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (data.pct != null) $("progress-fill").style.width = `${data.pct}%`;
+    if (data.message) $("progress-text").textContent = `[${data.stage||""}] ${data.message}`;
+    if (data.stage === "done") {
+      es.close();
+      currentEventSource = null;
+      const r = await fetch(`/video/result/${jobId}`).then(x => x.json());
+      const artifactList = Object.entries(r.artifacts || {}).map(([n, u]) =>
+        `<a href="${u}" style="color:var(--accent); margin-right:12px;">📎 ${n}</a>`).join("");
+      showResult(
+        r.markdown || "",
+        r.filename || "video.md",
+        `${(r.chars||0).toLocaleString("pt-BR")} caracteres · fonte: ${r.transcript_source||""}${r.vision_provider?" · vision: "+r.vision_provider:""}`,
+        null,
+        artifactList,
+      );
+      $("process-btn").disabled = false;
+      $("video-status").className = "status ok";
+      $("video-status").textContent = "Pronto.";
+    }
+    if (data.stage === "failed") {
+      es.close();
+      currentEventSource = null;
+      $("video-status").className = "status err";
+      $("video-status").textContent = "Falhou: " + (data.error || data.message || "erro desconhecido");
+      $("process-btn").disabled = false;
+    }
+  };
+  es.onerror = () => {
+    // Silent — Flask dev server drops SSE at times. UI recovers on next event.
+  };
+}
+
+// ================================================================
+// Result card (shared)
+// ================================================================
+function showResult(md, filename, meta, log, artifactHtml) {
+  currentMd = md;
+  currentName = filename;
+  $("output").textContent = md;
+  $("meta").textContent = meta || "";
+  if (artifactHtml) {
+    $("artifacts-list").innerHTML = artifactHtml;
+    $("artifacts-list").classList.remove("hidden");
+  } else {
+    $("artifacts-list").classList.add("hidden");
+  }
+  if (log) {
+    $("log").textContent = log;
+    $("logDetails").classList.remove("hidden");
+  } else {
+    $("logDetails").classList.add("hidden");
+  }
+  $("resultCard").classList.remove("hidden");
+}
 
 $("download").addEventListener("click", () => {
   const blob = new Blob([currentMd], { type: "text/markdown;charset=utf-8" });

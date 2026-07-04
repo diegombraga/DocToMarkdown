@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ghostscript \
       unpaper \
       pngquant \
+      libmagic1 \
+      git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -30,6 +32,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py ./
 COPY templates ./templates
 COPY static ./static
+COPY video ./video
 
 EXPOSE 5555
 

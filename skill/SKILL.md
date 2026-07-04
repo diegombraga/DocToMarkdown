@@ -1,6 +1,6 @@
 ---
 name: DocToMarkdown
-description: Converte qualquer arquivo (PDF, DOCX, PPTX, XLSX, imagens, HTML, EPUB, áudio, YouTube) em Markdown limpo — com OCR automático em PDFs escaneados. Use quando o usuário quiser transformar um arquivo em texto/markdown, extrair conteúdo legível de um documento, processar um PDF escaneado, preparar material para alimentar um LLM, ou dar contexto documental ao Claude. Triggers em português — "converter pra markdown", "extrair texto do PDF", "ler esse arquivo", "PDF escaneado", "OCR nesse documento", "transformar em md", "markdown desse arquivo", "esse PDF não abre / não copia texto". Triggers em inglês — "convert to markdown", "extract text from PDF", "OCR this scan", "read this document", "turn this into md".
+description: Converte qualquer arquivo (PDF, DOCX, PPTX, XLSX, imagens, HTML, EPUB, áudio) ou URL de vídeo (YouTube, Vimeo, etc.) em Markdown com contexto completo. Suporta OCR em PDFs escaneados, transcrição local via Whisper, extração de texto na tela via OCR de frames, e descrição visual scene-by-scene via LLM. Use quando o usuário quiser transformar arquivo/vídeo em texto/markdown, extrair conteúdo, processar PDF escaneado, transcrever/analisar um vídeo do YouTube com contexto visual, ou preparar material para alimentar um LLM. Triggers em português — "converter pra markdown", "extrair texto do PDF", "PDF escaneado", "transcrever vídeo", "analisar esse YouTube", "markdown desse vídeo", "resumir esse vídeo", "extrair contexto do vídeo". Triggers em inglês — "convert to markdown", "extract text", "OCR this scan", "transcribe this video", "analyze this YouTube", "get context from video".
 ---
 
 # DocToMarkdown
@@ -98,9 +98,57 @@ Não processe silenciosamente uma pasta inteira sem confirmação — arquivos g
 - **YouTube URL** ao invés de arquivo: markitdown suporta URLs de YouTube diretamente. Passe a URL como argumento.
 - **Arquivos muito grandes** (>100MB): oferecer processar por partes; markitdown funciona mas o output pode ser gigantesco.
 
+## URLs de vídeo (YouTube, Vimeo, etc.)
+
+Quando o usuário passar uma URL de vídeo em vez de arquivo, use a interface web do DocToMarkdown (se rodando) ou a CLI equivalente. A ferramenta processa vídeo em 5 fases:
+
+1. **yt-dlp** baixa metadata + MP3 do áudio + (opcional) MP4 + legendas nativas
+2. **Transcript**: legenda manual se existe (mais fiel); auto-gerada como fallback; Whisper local se nada disso serve
+3. **Frames**: PySceneDetect extrai um keyframe por corte de cena
+4. **OCR**: Tesseract em cada frame → captura texto na tela (slides, chyrons, whiteboard)
+5. **Vision LLM** (opcional, BYOK): descreve o que se vê em cada cena
+
+Output: Markdown com timeline unificada — `🎤 fala + 🖥 texto na tela + 👁 descrição visual`.
+
+### Como acionar
+
+Se o app DocToMarkdown está rodando (`curl http://127.0.0.1:5555/health` retorna 200), abra o navegador na tab **Vídeo/URL** e mostre ao usuário como usar.
+
+Se não está rodando, ou o usuário prefere linha de comando, use `curl` na API:
+
+```bash
+# 1. Kick off
+JOB=$(curl -s -X POST http://127.0.0.1:5555/video/process \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://youtube.com/watch?v=XXX","transcript_mode":"auto","vision_provider":null}' \
+  | jq -r .job_id)
+
+# 2. Wait for done (polling)
+until curl -sf "http://127.0.0.1:5555/video/result/$JOB" >/dev/null; do sleep 2; done
+
+# 3. Get result
+curl -s "http://127.0.0.1:5555/video/result/$JOB" | jq -r .markdown > video.md
+```
+
+### Vision LLM (BYOK)
+
+Se o usuário quer descrição visual completa das cenas, ele precisa de uma chave de API:
+
+- `ANTHROPIC_API_KEY` → Claude Sonnet 4.5 vision
+- `OPENAI_API_KEY` → GPT-4o mini
+- `GEMINI_API_KEY` → Gemini 2.0 Flash
+
+Passe no body do POST: `"vision_provider": "anthropic"` (ou `openai`/`gemini`). O env var deve estar setado no processo que roda o app.
+
+### Cuidados
+
+- Vídeos com legenda manual são MUITO mais rápidos que Whisper (5s vs 5min pra 30min de conteúdo)
+- Whisper baixa modelo na 1ª execução (~150MB pro `base`)
+- Vídeos >30min com vision LLM podem custar US$0.10-0.50 dependendo do provider — avise o usuário
+
 ## Alternativa: interface web
 
-Se o usuário instalou o app DocToMarkdown (veja o repo), ele pode preferir a interface web em `http://127.0.0.1:5555` — drag-and-drop, toggles, download, cópia. Mencione essa opção quando útil, especialmente se o usuário está processando múltiplos arquivos manualmente.
+Se o usuário instalou o app DocToMarkdown (veja o repo), ele pode preferir a interface web em `http://127.0.0.1:5555` — drag-and-drop, tabs Arquivo/Vídeo, download, cópia. Mencione essa opção quando útil, especialmente se o usuário está processando múltiplos arquivos manualmente.
 
 ## Recursos
 

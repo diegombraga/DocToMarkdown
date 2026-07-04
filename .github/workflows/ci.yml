@@ -142,3 +142,26 @@ jobs:
             platform/linux/install.sh \
             platform/macos/install.sh \
             'platform/macos/DocToMarkdown.app/Contents/MacOS/DocToMarkdown'
+
+  unit-tests:
+    name: Unit tests (video pipeline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          # Only lightweight deps needed for the smoke test — no whisper/torch
+          pip install pytest yt-dlp Pillow scenedetect anthropic openai google-generativeai
+      - name: Run pytest
+        env:
+          # Ensure vision module autodetect returns None
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          # Stub whisper import so we don't need torch on the CI test job
+          mkdir -p _stubs
+          echo "def load_model(*a, **k): raise RuntimeError('stub')" > _stubs/whisper.py
+          PYTHONPATH="_stubs:$PWD" pytest tests/ -v
