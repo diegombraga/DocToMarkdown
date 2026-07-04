@@ -74,17 +74,26 @@ Switch to the **🎬 Vídeo / URL** tab. Paste a URL, click **Prever** to load t
 
 Costs are estimates for typical videos with ~50 scene keyframes. Model overrides via `DTM_ANTHROPIC_MODEL` / `DTM_OPENAI_MODEL` / `DTM_GEMINI_MODEL`.
 
-### 2. Claude Code skill
-Install the skill (bundled with the installers, or manually):
+### 2. Claude integrations
+
+Two ways to give Claude access, depending on which product you use:
+
+**MCP server (works in Claude Desktop, Claude Code, claude.ai with connectors)** — the installer offers to register this for you. Once registered, restart Claude Desktop and its tool palette will show 7 new tools: `convert_file`, `process_video`, `preview_video`, `list_supported_formats`, `get_provider_status`, `set_api_key`, `delete_api_key`. Just tell Claude what to convert and it uses them.
+
+To register manually or on a machine where you cloned rather than installed:
 ```bash
-git clone https://github.com/diegombraga/DocToMarkdown
+python /path/to/DocToMarkdown/mcp_server.py --install-claude-desktop
+```
+
+**Claude Code skill** — bundled with the installer, or manually:
+```bash
 mkdir -p ~/.claude/skills
 cp -R DocToMarkdown/skill ~/.claude/skills/DocToMarkdown
 ```
 Then in Claude Code, say:
 > Converta `~/Downloads/contrato-escaneado.pdf` pra markdown
 
-Claude detects the file is a scanned PDF, runs OCR (Portuguese + English by default), then converts it to `.md` alongside the original.
+The skill instructs Claude to use the MCP server if available, otherwise fall back to the HTTP API on `127.0.0.1:5555`.
 
 ### 3. CLI
 The installers also add a `doc2md` command on your PATH:

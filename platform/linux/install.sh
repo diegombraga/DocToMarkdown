@@ -94,8 +94,9 @@ mkdir -p "$RUNTIME_DIR/src"
 rsync -a --delete \
   --exclude='.venv' --exclude='__pycache__' --exclude='.git' \
   --exclude='.DS_Store' --exclude='dist' --exclude='build' \
-  "$REPO_ROOT/app.py" "$REPO_ROOT/templates" "$REPO_ROOT/static" \
-  "$REPO_ROOT/video" "$REPO_ROOT/requirements.txt" \
+  "$REPO_ROOT/app.py" "$REPO_ROOT/mcp_server.py" \
+  "$REPO_ROOT/templates" "$REPO_ROOT/static" "$REPO_ROOT/video" \
+  "$REPO_ROOT/requirements.txt" \
   "$RUNTIME_DIR/src/"
 
 # ---------- venv ----------
@@ -158,6 +159,14 @@ if [[ -d "$REPO_ROOT/skill" ]]; then
     mkdir -p "$SKILL_DEST"
     cp -R "$REPO_ROOT/skill/." "$SKILL_DEST/"
     ok "Skill instalada em $SKILL_DEST"
+  fi
+fi
+
+# ---------- MCP server para Claude Desktop (opcional) ----------
+CLAUDE_DESKTOP_CFG="$HOME/.config/Claude/claude_desktop_config.json"
+if [[ -d "$(dirname "$CLAUDE_DESKTOP_CFG")" ]] || [[ -n "$CI_MODE" ]]; then
+  if [[ -n "$CI_MODE" ]] || { [[ -t 0 ]] && read -r -p "Registrar servidor MCP no Claude Desktop? [Y/n] " ans && [[ "${ans,,}" != "n" ]]; }; then
+    "$RUNTIME_DIR/.venv/bin/python" "$RUNTIME_DIR/src/mcp_server.py" --install-claude-desktop || warn "MCP install falhou (não crítico)"
   fi
 fi
 

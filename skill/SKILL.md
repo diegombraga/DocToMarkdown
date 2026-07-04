@@ -21,7 +21,13 @@ Sempre que o usuário quiser **texto/markdown a partir de um arquivo**, mesmo qu
 - "Transforma essa apresentação em markdown"
 - "Extrai a tabela desse xlsx pra mim"
 
-## Passo a passo obrigatório
+## Preferência de canal — MCP primeiro
+
+Se o Claude tem acesso ao **MCP server `doctomarkdown`** (ferramentas `convert_file`, `process_video`, `preview_video`, `list_supported_formats`, `get_provider_status`, `set_api_key`, `delete_api_key`), **use essas tools nativas** em vez de subprocessos. Elas são mais confiáveis e não dependem da UI web estar rodando.
+
+Se as tools MCP não estiverem disponíveis (checar o tool palette antes), caia pra HTTP na porta 5555 (se a UI estiver rodando) ou pra subprocess `markitdown`/`ocrmypdf` diretamente.
+
+## Passo a passo obrigatório (fallback sem MCP)
 
 ### 1. Verificar dependências
 

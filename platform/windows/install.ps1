@@ -75,7 +75,7 @@ Log "Preparando $RuntimeDir"
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 $SrcDest = Join-Path $RuntimeDir "src"
 New-Item -ItemType Directory -Force -Path $SrcDest | Out-Null
-foreach ($item in @('app.py','templates','static','video','requirements.txt')) {
+foreach ($item in @('app.py','mcp_server.py','templates','static','video','requirements.txt')) {
     $s = Join-Path $RepoRoot $item
     $d = Join-Path $SrcDest $item
     if (Test-Path $s) {
@@ -142,6 +142,16 @@ if (Test-Path $SkillSrc) {
         Copy-Item -Recurse -Force (Join-Path $SkillSrc "*") $SkillDest
         Ok "Skill instalada em $SkillDest"
     }
+}
+
+# ---------- MCP server para Claude Desktop (opcional) ----------
+$McpDoIt = $CiMode
+if (-not $CiMode) {
+    $ansMcp = Read-Host "Registrar servidor MCP no Claude Desktop? [Y/n]"
+    if ($ansMcp -eq "" -or $ansMcp.ToLower() -eq "y") { $McpDoIt = $true }
+}
+if ($McpDoIt) {
+    & $VenvPy (Join-Path $SrcDest "mcp_server.py") "--install-claude-desktop"
 }
 
 Write-Host ""
