@@ -11,20 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: macOS
-            os: macos-latest
-            shell: bash
-            install: bash platform/macos/install.sh --ci
-          - name: Ubuntu (apt)
-            os: ubuntu-latest
-            shell: bash
-            install: bash platform/linux/install.sh --ci
-          - name: Windows
-            os: windows-latest
-            shell: pwsh
-            install: pwsh -File platform/windows/install.ps1 -Ci
-    name: ${{ matrix.name }}
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,33 +22,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run installer
-        shell: ${{ matrix.shell }}
-        env:
-          CI: "1"
-          DEBIAN_FRONTEND: noninteractive
-        run: ${{ matrix.install }}
+      - name: Install (macOS)
+        if: runner.os == 'macOS'
+        env: { CI: "1" }
+        run: bash platform/macos/install.sh --ci
 
-      - name: Start server and probe /health (Unix)
-        if: runner.os != 'Windows'
+      - name: Install (Linux)
+        if: runner.os == 'Linux'
+        env: { CI: "1", DEBIAN_FRONTEND: noninteractive }
+        run: bash platform/linux/install.sh --ci
+
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env: { CI: "1" }
+        run: pwsh -File platform/windows/install.ps1 -Ci
+
+      - name: Probe /health (macOS)
+        if: runner.os == 'macOS'
         run: |
           set -e
-          # Locate venv installed by installer
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            VENV_PY="$HOME/Library/Application Support/DocToMarkdown/.venv/bin/python"
-            SRC="$HOME/Library/Application Support/DocToMarkdown/src/app.py"
-          else
-            VENV_PY="$HOME/.local/share/DocToMarkdown/.venv/bin/python"
-            SRC="$HOME/.local/share/DocToMarkdown/src/app.py"
-          fi
+          VENV_PY="$HOME/Library/Application Support/DocToMarkdown/.venv/bin/python"
+          SRC="$HOME/Library/Application Support/DocToMarkdown/src/app.py"
           "$VENV_PY" "$SRC" &
           SERVER_PID=$!
           for _ in $(seq 1 30); do
             sleep 1
             if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
-              echo "server up"
-              curl -s http://127.0.0.1:5555/health
-              echo ""
+              curl -s http://127.0.0.1:5555/health; echo
               kill $SERVER_PID 2>/dev/null || true
               exit 0
             fi
@@ -69,7 +58,27 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
           exit 1
 
-      - name: Start server and probe /health (Windows)
+      - name: Probe /health (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          VENV_PY="$HOME/.local/share/DocToMarkdown/.venv/bin/python"
+          SRC="$HOME/.local/share/DocToMarkdown/src/app.py"
+          "$VENV_PY" "$SRC" &
+          SERVER_PID=$!
+          for _ in $(seq 1 30); do
+            sleep 1
+            if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
+              curl -s http://127.0.0.1:5555/health; echo
+              kill $SERVER_PID 2>/dev/null || true
+              exit 0
+            fi
+          done
+          echo "server never came up" >&2
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1
+
+      - name: Probe /health (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -81,11 +90,7 @@ jobs:
               Start-Sleep -Seconds 1
               try {
                 $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5555/health -TimeoutSec 2
-                if ($r.StatusCode -eq 200) {
-                  Write-Host "server up"
-                  Write-Host $r.Content
-                  exit 0
-                }
+                if ($r.StatusCode -eq 200) { Write-Host $r.Content; exit 0 }
               } catch { }
             }
             Write-Error "server never came up"
@@ -95,7 +100,7 @@ jobs:
           }
 
   docker:
-    name: Docker build
+    name: Docker build & probe
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,14 +119,11 @@ jobs:
           for _ in $(seq 1 30); do
             sleep 1
             if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
-              echo "container up"
-              curl -s http://127.0.0.1:5555/health
-              echo ""
+              curl -s http://127.0.0.1:5555/health; echo
               docker stop doctomarkdown >/dev/null
               exit 0
             fi
           done
-          echo "container never came up" >&2
           docker logs doctomarkdown || true
           exit 1
 
@@ -130,10 +132,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
-      - name: Lint
-        run: |
+      - run: sudo apt-get install -y shellcheck
+      - run: |
           shellcheck -s bash \
             install.sh uninstall.sh \
             platform/linux/install.sh \
