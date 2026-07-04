@@ -3,7 +3,8 @@ FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=5555
+    PORT=5555 \
+    HOST=0.0.0.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ocrmypdf \

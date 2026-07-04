@@ -118,11 +118,17 @@ def _pick_port(preferred: int) -> int:
 
 if __name__ == "__main__":
     preferred = int(os.environ.get("PORT", "5555"))
-    port = _pick_port(preferred)
+    # HOST=127.0.0.1 by default keeps the UI local-only on installed machines.
+    # Container images override to 0.0.0.0 so the mapped port is reachable.
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = _pick_port(preferred) if host == "127.0.0.1" else preferred
     if port != preferred:
         print(
             f"  Porta {preferred} ocupada — usando {port}", flush=True, file=sys.stderr
         )
-    print(f"\n  DocToMarkdown rodando em http://127.0.0.1:{port}\n", flush=True)
+    display_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    print(
+        f"\n  DocToMarkdown rodando em http://{display_host}:{port}\n", flush=True
+    )
     Path(tempfile.gettempdir(), "doctomarkdown.port").write_text(str(port))
-    app.run(host="127.0.0.1", port=port, debug=False)
+    app.run(host=host, port=port, debug=False)
