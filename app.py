@@ -15,6 +15,7 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
+from video import config as video_config
 from video import get_manager, vision
 
 MARKITDOWN = shutil.which("markitdown")
@@ -109,6 +110,39 @@ def convert():
                 "chars": len(proc.stdout),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Settings — API keys for vision LLM providers
+# ---------------------------------------------------------------------------
+
+
+@app.route("/settings/keys", methods=["GET"])
+def settings_keys_get():
+    return jsonify(video_config.snapshot())
+
+
+@app.route("/settings/keys", methods=["POST"])
+def settings_keys_post():
+    data = request.get_json(silent=True) or {}
+    provider = (data.get("provider") or "").strip()
+    key = (data.get("key") or "").strip()
+    if not provider or not key:
+        return jsonify({"error": "provider e key são obrigatórios"}), 400
+    try:
+        video_config.set_key(provider, key)
+    except (ValueError, PermissionError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(video_config.snapshot())
+
+
+@app.route("/settings/keys/<provider>", methods=["DELETE"])
+def settings_keys_delete(provider):
+    try:
+        video_config.delete_key(provider)
+    except (ValueError, PermissionError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(video_config.snapshot())
 
 
 # ---------------------------------------------------------------------------

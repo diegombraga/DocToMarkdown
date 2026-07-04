@@ -28,9 +28,82 @@
       min-height: 100vh;
     }
     .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
-    header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 12px; }
+    header .title-block { flex: 1; }
     h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
     .subtitle { color: var(--muted); font-size: 13px; }
+    header .settings-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    header .settings-btn:hover { color: var(--text); }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 60px 20px;
+      z-index: 50;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 640px;
+      padding: 24px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    .modal h2 { margin: 0 0 4px 0; font-size: 18px; font-weight: 600; }
+    .modal .modal-sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    .modal .provider-row {
+      border-top: 1px solid var(--border);
+      padding: 16px 0;
+    }
+    .modal .provider-row:first-of-type { border-top: 0; }
+    .modal .provider-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .modal .provider-head strong { font-size: 14px; }
+    .provider-status { font-size: 12px; }
+    .provider-status.ok { color: var(--ok); }
+    .provider-status.off { color: var(--muted); }
+    .provider-status.env { color: var(--accent); }
+    .modal input[type=password], .modal input[type=text] { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+    .modal .provider-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .modal .close-btn {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .modal .close-btn:hover { color: var(--text); }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
     .card {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -210,11 +283,78 @@
 <body>
   <div class="wrap">
     <header>
-      <div>
+      <div class="title-block">
         <h1>DocToMarkdown</h1>
         <div class="subtitle">markitdown + ocrmypdf + yt-dlp + Whisper · qualquer arquivo ou vídeo → Markdown</div>
       </div>
+      <button class="settings-btn" id="open-settings">⚙ Configurações</button>
     </header>
+
+    <!-- Modal de configurações -->
+    <div class="modal-backdrop" id="settings-modal" role="dialog" aria-modal="true">
+      <div class="modal">
+        <h2>Chaves de API para análise visual</h2>
+        <div class="modal-sub">
+          Opcional. Sem chave, o app entrega transcript + OCR do texto na tela.
+          Com chave, cada frame também recebe uma descrição visual scene-by-scene.
+          Chaves são salvas em <code style="color:var(--text)">~/.config/DocToMarkdown/keys.json</code> com permissão 600 (só você lê).
+        </div>
+
+        <div class="provider-row" data-provider="anthropic">
+          <div class="provider-head">
+            <strong>Anthropic — Claude Sonnet 4.5</strong>
+            <span class="provider-status" id="status-anthropic">carregando…</span>
+          </div>
+          <div class="desc" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
+            Chave começa com <code>sk-ant-</code>. Custo médio ~US$0.30-0.50 por vídeo de 30min.
+          </div>
+          <input type="password" placeholder="sk-ant-…" id="input-anthropic" autocomplete="off" />
+          <div class="provider-actions">
+            <button class="save-key" data-p="anthropic">Salvar</button>
+            <button class="ghost del-key" data-p="anthropic">Remover</button>
+            <button class="ghost toggle-visibility" data-target="input-anthropic">Mostrar</button>
+          </div>
+        </div>
+
+        <div class="provider-row" data-provider="openai">
+          <div class="provider-head">
+            <strong>OpenAI — GPT-4o mini</strong>
+            <span class="provider-status" id="status-openai">carregando…</span>
+          </div>
+          <div class="desc" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
+            Chave começa com <code>sk-</code>. Custo médio ~US$0.05-0.10 por vídeo de 30min.
+          </div>
+          <input type="password" placeholder="sk-…" id="input-openai" autocomplete="off" />
+          <div class="provider-actions">
+            <button class="save-key" data-p="openai">Salvar</button>
+            <button class="ghost del-key" data-p="openai">Remover</button>
+            <button class="ghost toggle-visibility" data-target="input-openai">Mostrar</button>
+          </div>
+        </div>
+
+        <div class="provider-row" data-provider="gemini">
+          <div class="provider-head">
+            <strong>Google — Gemini 2.0 Flash</strong>
+            <span class="provider-status" id="status-gemini">carregando…</span>
+          </div>
+          <div class="desc" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
+            Obtenha em <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com/apikey</a>. Custo médio ~US$0.02-0.05.
+          </div>
+          <input type="password" placeholder="AI…" id="input-gemini" autocomplete="off" />
+          <div class="provider-actions">
+            <button class="save-key" data-p="gemini">Salvar</button>
+            <button class="ghost del-key" data-p="gemini">Remover</button>
+            <button class="ghost toggle-visibility" data-target="input-gemini">Mostrar</button>
+          </div>
+        </div>
+
+        <div class="status" id="settings-status"></div>
+
+        <div class="modal-footer">
+          <button class="close-btn" id="close-settings">Fechar</button>
+        </div>
+      </div>
+    </div>
 
     <div class="tabs">
       <button class="tab active" data-tab="arquivo">📄 Arquivo</button>
@@ -378,6 +518,94 @@ document.querySelectorAll(".tab").forEach(t => {
     $("resultCard").classList.add("hidden");
   });
 });
+
+// ---------------- Settings modal ----------------
+const modal = $("settings-modal");
+$("open-settings").addEventListener("click", () => { modal.classList.add("open"); refreshKeyStatus(); });
+$("close-settings").addEventListener("click", () => modal.classList.remove("open"));
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("open"); });
+
+async function refreshKeyStatus() {
+  try {
+    const s = await fetch("/settings/keys").then(r => r.json());
+    for (const p of ["anthropic", "openai", "gemini"]) {
+      const el = $(`status-${p}`);
+      const info = s[p] || {};
+      if (info.from_launch_env) {
+        el.className = "provider-status env";
+        el.textContent = `✓ configurado via env var · ${info.masked || ""}`;
+      } else if (info.configured) {
+        el.className = "provider-status ok";
+        el.textContent = `✓ salvo · ${info.masked || ""}`;
+      } else {
+        el.className = "provider-status off";
+        el.textContent = "○ não configurado";
+      }
+    }
+    // Also refresh the availability used by the video tab
+    visionAvailability = {
+      anthropic: s.anthropic?.configured || false,
+      openai: s.openai?.configured || false,
+      gemini: s.gemini?.configured || false,
+    };
+    updateVisionHint();
+  } catch {}
+}
+
+document.querySelectorAll(".save-key").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const p = btn.dataset.p;
+    const key = $(`input-${p}`).value.trim();
+    if (!key) { setSettingsStatus("Digite uma chave antes de salvar.", "err"); return; }
+    setSettingsStatus("Salvando…", "busy");
+    try {
+      const res = await fetch("/settings/keys", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ provider: p, key }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao salvar");
+      $(`input-${p}`).value = "";
+      $(`input-${p}`).type = "password";
+      setSettingsStatus(`Chave ${p} salva.`, "ok");
+      refreshKeyStatus();
+    } catch (e) {
+      setSettingsStatus("Erro: " + e.message, "err");
+    }
+  });
+});
+
+document.querySelectorAll(".del-key").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const p = btn.dataset.p;
+    if (!confirm(`Remover a chave ${p}?`)) return;
+    setSettingsStatus("Removendo…", "busy");
+    try {
+      const res = await fetch(`/settings/keys/${p}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha");
+      setSettingsStatus(`Chave ${p} removida.`, "ok");
+      refreshKeyStatus();
+    } catch (e) {
+      setSettingsStatus("Erro: " + e.message, "err");
+    }
+  });
+});
+
+document.querySelectorAll(".toggle-visibility").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const input = $(btn.dataset.target);
+    if (input.type === "password") { input.type = "text"; btn.textContent = "Ocultar"; }
+    else                             { input.type = "password"; btn.textContent = "Mostrar"; }
+  });
+});
+
+function setSettingsStatus(msg, kind) {
+  const el = $("settings-status");
+  el.textContent = msg;
+  el.className = "status " + (kind || "");
+}
 
 // ---------------- Fetch health for vision availability ----------------
 fetch("/health").then(r => r.json()).then(h => {
