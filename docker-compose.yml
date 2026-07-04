@@ -1,0 +1,8 @@
+services:
+  doctomarkdown:
+    build: .
+    image: ghcr.io/diegombraga/doctomarkdown:latest
+    container_name: doctomarkdown
+    ports:
+      - "5555:5555"
+    restart: unless-stopped

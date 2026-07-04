@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  install-and-health:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            shell: bash
+            install: bash platform/macos/install.sh --ci
+          - name: Ubuntu (apt)
+            os: ubuntu-latest
+            shell: bash
+            install: bash platform/linux/install.sh --ci
+          - name: Windows
+            os: windows-latest
+            shell: pwsh
+            install: pwsh -File platform/windows/install.ps1 -Ci
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run installer
+        shell: ${{ matrix.shell }}
+        env:
+          CI: "1"
+          DEBIAN_FRONTEND: noninteractive
+        run: ${{ matrix.install }}
+
+      - name: Start server and probe /health (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -e
+          # Locate venv installed by installer
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            VENV_PY="$HOME/Library/Application Support/DocToMarkdown/.venv/bin/python"
+            SRC="$HOME/Library/Application Support/DocToMarkdown/src/app.py"
+          else
+            VENV_PY="$HOME/.local/share/DocToMarkdown/.venv/bin/python"
+            SRC="$HOME/.local/share/DocToMarkdown/src/app.py"
+          fi
+          "$VENV_PY" "$SRC" &
+          SERVER_PID=$!
+          for _ in $(seq 1 30); do
+            sleep 1
+            if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
+              echo "server up"
+              curl -s http://127.0.0.1:5555/health
+              echo ""
+              kill $SERVER_PID 2>/dev/null || true
+              exit 0
+            fi
+          done
+          echo "server never came up" >&2
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1
+
+      - name: Start server and probe /health (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Venv = Join-Path $env:LOCALAPPDATA "DocToMarkdown\.venv\Scripts\python.exe"
+          $Src  = Join-Path $env:LOCALAPPDATA "DocToMarkdown\src\app.py"
+          $proc = Start-Process -FilePath $Venv -ArgumentList $Src -PassThru -WindowStyle Hidden
+          try {
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5555/health -TimeoutSec 2
+                if ($r.StatusCode -eq 200) {
+                  Write-Host "server up"
+                  Write-Host $r.Content
+                  exit 0
+                }
+              } catch { }
+            }
+            Write-Error "server never came up"
+            exit 1
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: doctomarkdown:ci
+      - name: Run and probe /health
+        run: |
+          set -e
+          docker run --rm -d -p 5555:5555 --name doctomarkdown doctomarkdown:ci
+          for _ in $(seq 1 30); do
+            sleep 1
+            if curl -fs http://127.0.0.1:5555/health >/dev/null 2>&1; then
+              echo "container up"
+              curl -s http://127.0.0.1:5555/health
+              echo ""
+              docker stop doctomarkdown >/dev/null
+              exit 0
+            fi
+          done
+          echo "container never came up" >&2
+          docker logs doctomarkdown || true
+          exit 1
+
+  shellcheck:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      - name: Lint
+        run: |
+          shellcheck -s bash \
+            install.sh uninstall.sh \
+            platform/linux/install.sh \
+            platform/macos/install.sh \
+            'platform/macos/DocToMarkdown.app/Contents/MacOS/DocToMarkdown'

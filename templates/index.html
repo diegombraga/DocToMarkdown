@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DocToMarkdown</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #161a22;
+      --panel-2: #1d2230;
+      --border: #2a3040;
+      --text: #e6e9ef;
+      --muted: #8892a6;
+      --accent: #6ea8fe;
+      --accent-2: #4c8dff;
+      --danger: #ff6b6b;
+      --ok: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      background: var(--panel-2);
+    }
+    .dropzone.drag { border-color: var(--accent); background: rgba(110,168,254,.08); }
+    .dropzone strong { color: var(--text); }
+    .dropzone .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    #file { display: none; }
+    .filename { margin-top: 12px; color: var(--accent); font-size: 14px; word-break: break-all; }
+    .options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-top: 8px; }
+    @media (max-width: 640px) { .options { grid-template-columns: 1fr; } }
+    label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+    label.field span { color: var(--text); }
+    input[type=text], select {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 9px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+    .row .desc { color: var(--muted); font-size: 12px; }
+    .actions { display: flex; gap: 10px; margin-top: 16px; }
+    button {
+      background: var(--accent-2);
+      color: white;
+      border: 0;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: var(--accent); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    button.ghost:hover { color: var(--text); }
+    .status { margin-top: 12px; font-size: 13px; }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--danger); white-space: pre-wrap; }
+    .status.busy { color: var(--accent); }
+    .result-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .result-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
+    .meta { color: var(--muted); font-size: 12px; }
+    pre {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      max-height: 500px;
+      overflow: auto;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #cfd6e4;
+      margin: 0;
+    }
+    details { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    details pre { max-height: 200px; }
+    .lang-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .chip {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--muted);
+      background: var(--panel-2);
+      user-select: none;
+    }
+    .chip.on { border-color: var(--accent); color: var(--accent); background: rgba(110,168,254,.08); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>DocToMarkdown</h1>
+        <div class="subtitle">markitdown + ocrmypdf · converte PDF, DOCX, PPTX, XLSX, imagens, HTML, áudio&hellip; em Markdown</div>
+      </div>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <strong>Arraste um arquivo aqui</strong> · ou clique para escolher
+        <div class="hint">Máximo 500 MB · PDF, DOCX, PPTX, XLSX, imagens, HTML, EPUB, áudio&hellip;</div>
+        <div class="filename" id="filename"></div>
+      </div>
+      <input type="file" id="file" />
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom: 12px;">
+        <input type="checkbox" id="use_ocr" />
+        <label for="use_ocr"><span>Rodar OCR no PDF antes de converter</span></label>
+      </div>
+      <div class="row" style="margin-bottom: 6px;">
+        <input type="checkbox" id="force_ocr" />
+        <label for="force_ocr">
+          Forçar OCR <span class="desc">(refaz mesmo se o PDF já tem texto)</span>
+        </label>
+      </div>
+
+      <div style="margin-top: 14px;">
+        <label class="field">
+          <span>Idiomas do OCR</span>
+          <div class="lang-chips" id="chips">
+            <span class="chip on" data-l="por">Português</span>
+            <span class="chip on" data-l="eng">Inglês</span>
+            <span class="chip" data-l="spa">Espanhol</span>
+            <span class="chip" data-l="fra">Francês</span>
+            <span class="chip" data-l="ita">Italiano</span>
+            <span class="chip" data-l="deu">Alemão</span>
+          </div>
+          <input type="text" id="langs" value="por+eng" style="margin-top: 8px;" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="convert" disabled>Converter</button>
+        <button class="ghost" id="reset">Limpar</button>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="card hidden" id="resultCard">
+      <div class="result-head">
+        <h2>Resultado</h2>
+        <div>
+          <span class="meta" id="meta"></span>
+          <button id="copy" class="ghost" style="margin-left: 8px;">Copiar</button>
+          <button id="download">Baixar .md</button>
+        </div>
+      </div>
+      <pre id="output"></pre>
+      <details id="logDetails" class="hidden">
+        <summary>Log do OCR</summary>
+        <pre id="log"></pre>
+      </details>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentFile = null;
+let currentMd = "";
+let currentName = "output.md";
+
+const dz = $("dropzone");
+const fileInput = $("file");
+const filenameEl = $("filename");
+const convertBtn = $("convert");
+const statusEl = $("status");
+const useOcr = $("use_ocr");
+const forceOcr = $("force_ocr");
+const langsInput = $("langs");
+const chips = document.querySelectorAll(".chip");
+const resultCard = $("resultCard");
+const output = $("output");
+const metaEl = $("meta");
+const logDetails = $("logDetails");
+const logEl = $("log");
+
+dz.addEventListener("click", () => fileInput.click());
+["dragenter","dragover"].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add("drag"); }));
+["dragleave","drop"].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove("drag"); }));
+dz.addEventListener("drop", ev => { if (ev.dataTransfer.files.length) setFile(ev.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
+
+function setFile(f) {
+  currentFile = f;
+  filenameEl.textContent = `${f.name} · ${(f.size/1024/1024).toFixed(2)} MB`;
+  convertBtn.disabled = false;
+  const isPdf = f.name.toLowerCase().endsWith(".pdf");
+  if (isPdf && !useOcr.checked) {
+    statusEl.textContent = "Dica: se este PDF é escaneado (sem camada de texto), marque 'Rodar OCR'.";
+    statusEl.className = "status";
+  } else {
+    statusEl.textContent = "";
+  }
+}
+
+chips.forEach(c => c.addEventListener("click", () => {
+  c.classList.toggle("on");
+  const selected = Array.from(document.querySelectorAll(".chip.on")).map(x => x.dataset.l);
+  langsInput.value = selected.join("+") || "por";
+}));
+
+$("reset").addEventListener("click", () => {
+  currentFile = null;
+  fileInput.value = "";
+  filenameEl.textContent = "";
+  convertBtn.disabled = true;
+  statusEl.textContent = "";
+  resultCard.classList.add("hidden");
+});
+
+convertBtn.addEventListener("click", async () => {
+  if (!currentFile) return;
+  convertBtn.disabled = true;
+  statusEl.textContent = useOcr.checked ? "Rodando OCR + convertendo (pode demorar)…" : "Convertendo…";
+  statusEl.className = "status busy";
+  resultCard.classList.add("hidden");
+
+  const fd = new FormData();
+  fd.append("file", currentFile);
+  fd.append("use_ocr", useOcr.checked ? "true" : "false");
+  fd.append("force_ocr", forceOcr.checked ? "true" : "false");
+  fd.append("langs", langsInput.value.trim() || "por+eng");
+
+  try {
+    const res = await fetch("/convert", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) {
+      statusEl.className = "status err";
+      statusEl.textContent = (data.error || "Falha") + (data.log ? "\n\n" + data.log : "");
+      convertBtn.disabled = false;
+      return;
+    }
+    currentMd = data.markdown || "";
+    currentName = data.filename || "output.md";
+    output.textContent = currentMd;
+    metaEl.textContent = `${data.chars.toLocaleString("pt-BR")} caracteres` + (data.did_ocr ? " · OCR aplicado" : "");
+    if (data.ocr_log) {
+      logEl.textContent = data.ocr_log;
+      logDetails.classList.remove("hidden");
+    } else {
+      logDetails.classList.add("hidden");
+    }
+    resultCard.classList.remove("hidden");
+    statusEl.className = "status ok";
+    statusEl.textContent = "Pronto.";
+  } catch (e) {
+    statusEl.className = "status err";
+    statusEl.textContent = "Erro: " + e.message;
+  } finally {
+    convertBtn.disabled = false;
+  }
+});
+
+$("download").addEventListener("click", () => {
+  const blob = new Blob([currentMd], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = currentName;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+$("copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(currentMd);
+  const orig = $("copy").textContent;
+  $("copy").textContent = "Copiado!";
+  setTimeout(() => $("copy").textContent = orig, 1200);
+});
+</script>
+</body>
+</html>
