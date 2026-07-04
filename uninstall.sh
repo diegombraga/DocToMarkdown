@@ -27,13 +27,16 @@ BIN_FILE="$HOME/.local/bin/doc2md"
 SKILL_DIR="$HOME/.claude/skills/DocToMarkdown"
 
 log "Removendo arquivos do DocToMarkdown…"
-[[ -n "${APP_PATH:-}" ]] && rm -rf "$APP_PATH" 2>/dev/null || true
-[[ -n "${DESKTOP_FILE:-}" ]] && rm -f "$DESKTOP_FILE" 2>/dev/null || true
+if [[ -n "${APP_PATH:-}" ]]; then rm -rf "$APP_PATH" 2>/dev/null || true; fi
+if [[ -n "${DESKTOP_FILE:-}" ]]; then rm -f "$DESKTOP_FILE" 2>/dev/null || true; fi
 rm -rf "$RUNTIME_DIR"
 rm -f "$BIN_FILE"
 if [[ -d "$SKILL_DIR" ]]; then
   read -r -p "Remover também a skill do Claude Code em $SKILL_DIR? [y/N] " ans
-  [[ "${ans,,}" == "y" ]] && rm -rf "$SKILL_DIR" && ok "skill removida"
+  if [[ "${ans,,}" == "y" ]]; then
+    rm -rf "$SKILL_DIR"
+    ok "skill removida"
+  fi
 fi
 
 # Icons (Linux)

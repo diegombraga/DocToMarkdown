@@ -124,7 +124,9 @@ for size in 16 32 64 128 256 512 1024; do
   mkdir -p "$DEST"
   cp "$SRC" "$DEST/doctomarkdown.png"
 done
-command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q "$ICON_DIR_BASE" 2>/dev/null || true
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q "$ICON_DIR_BASE" 2>/dev/null || true
+fi
 ok "Ícones instalados"
 
 # ---------- .desktop entry ----------
@@ -143,7 +145,9 @@ Keywords=markdown;pdf;ocr;convert;doc;docx;
 StartupNotify=true
 EOF
 chmod +x "$DESKTOP_DIR/DocToMarkdown.desktop"
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$DESKTOP_DIR" 2>/dev/null || true
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q "$DESKTOP_DIR" 2>/dev/null || true
+fi
 ok "Atalho de aplicativo criado (aparece no menu do sistema)"
 
 # ---------- Skill (opcional) ----------
