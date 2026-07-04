@@ -94,7 +94,8 @@ mkdir -p "$RUNTIME_DIR/src"
 rsync -a --delete \
   --exclude='.venv' --exclude='__pycache__' --exclude='.git' \
   --exclude='.DS_Store' --exclude='dist' --exclude='build' \
-  "$REPO_ROOT/app.py" "$REPO_ROOT/templates" "$REPO_ROOT/static" "$REPO_ROOT/requirements.txt" \
+  "$REPO_ROOT/app.py" "$REPO_ROOT/templates" "$REPO_ROOT/static" \
+  "$REPO_ROOT/video" "$REPO_ROOT/requirements.txt" \
   "$RUNTIME_DIR/src/"
 
 # ---------- venv ----------
