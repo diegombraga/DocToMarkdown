@@ -14,3 +14,6 @@ google-generativeai>=0.8.0
 
 # MCP server (Claude Desktop / Claude Code integration)
 mcp[cli]>=1.2.0
+
+# Native desktop app (WebKit/WebView2 wrapper — no Electron bloat)
+pywebview>=5.0

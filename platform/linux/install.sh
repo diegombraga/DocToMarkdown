@@ -94,7 +94,7 @@ mkdir -p "$RUNTIME_DIR/src"
 rsync -a --delete \
   --exclude='.venv' --exclude='__pycache__' --exclude='.git' \
   --exclude='.DS_Store' --exclude='dist' --exclude='build' \
-  "$REPO_ROOT/app.py" "$REPO_ROOT/mcp_server.py" \
+  "$REPO_ROOT/app.py" "$REPO_ROOT/mcp_server.py" "$REPO_ROOT/desktop_app.py" \
   "$REPO_ROOT/templates" "$REPO_ROOT/static" "$REPO_ROOT/video" \
   "$REPO_ROOT/requirements.txt" \
   "$RUNTIME_DIR/src/"
@@ -109,14 +109,21 @@ log "Instalando pacotes Python (pode demorar ~1 min)…"
 "$RUNTIME_DIR/.venv/bin/pip" install --upgrade -r "$RUNTIME_DIR/src/requirements.txt" >/dev/null
 ok "Ambiente Python pronto"
 
-# ---------- CLI wrapper ----------
+# ---------- CLI wrappers ----------
 mkdir -p "$BIN_DIR"
+# doc2md — HTTP server (background service, browser UI)
 cat > "$BIN_DIR/doc2md" <<EOF
 #!/usr/bin/env bash
 exec "$RUNTIME_DIR/.venv/bin/python" "$RUNTIME_DIR/src/app.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/doc2md"
-ok "CLI 'doc2md' criado em $BIN_DIR"
+# doctomarkdown — native GUI app (called by the .desktop file)
+cat > "$BIN_DIR/doctomarkdown" <<EOF
+#!/usr/bin/env bash
+exec "$RUNTIME_DIR/.venv/bin/python" "$RUNTIME_DIR/src/desktop_app.py" "\$@"
+EOF
+chmod +x "$BIN_DIR/doctomarkdown"
+ok "Comandos 'doc2md' (HTTP) e 'doctomarkdown' (GUI) criados em $BIN_DIR"
 
 # ---------- Icons ----------
 log "Instalando ícones no tema hicolor…"
@@ -139,7 +146,7 @@ Type=Application
 Name=DocToMarkdown
 GenericName=File to Markdown Converter
 Comment=Convert PDF, DOCX, images and more to Markdown (with OCR)
-Exec=$BIN_DIR/doc2md
+Exec=$BIN_DIR/doctomarkdown
 Icon=doctomarkdown
 Terminal=false
 Categories=Office;Utility;Publishing;

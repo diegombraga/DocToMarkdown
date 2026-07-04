@@ -1,44 +1,20 @@
 #!/usr/bin/env bash
 # Launcher for DocToMarkdown.app on macOS.
-# Reuses an already-running instance if present; otherwise boots the Flask app.
+# Boots the Flask backend and hosts the UI in a native WKWebView window.
 set -e
 
 RUNTIME_DIR="$HOME/Library/Application Support/DocToMarkdown"
-PORT_FILE="$TMPDIR/doctomarkdown.port"
-[[ -z "$TMPDIR" ]] && PORT_FILE="/tmp/doctomarkdown.port"
 
 export PATH="$RUNTIME_DIR/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-# If a previous instance is still healthy, just point the browser at it.
-if [[ -f "$PORT_FILE" ]]; then
-  EXISTING_PORT=$(cat "$PORT_FILE" 2>/dev/null || echo "")
-  if [[ -n "$EXISTING_PORT" ]] && curl -fs -m 1 "http://127.0.0.1:$EXISTING_PORT/health" >/dev/null 2>&1; then
-    open "http://127.0.0.1:$EXISTING_PORT"
-    exit 0
-  fi
-fi
-
-# Otherwise boot: open browser once the server writes its port file.
-(
-  for _ in $(seq 1 30); do
-    sleep 0.4
-    if [[ -f "$PORT_FILE" ]]; then
-      P=$(cat "$PORT_FILE" 2>/dev/null || echo "")
-      if [[ -n "$P" ]] && curl -fs -m 1 "http://127.0.0.1:$P/health" >/dev/null 2>&1; then
-        open "http://127.0.0.1:$P"
-        exit 0
-      fi
-    fi
-  done
-) &
-
 # Bootstrap runtime if missing (first launch after user deleted app support dir)
-if [[ ! -x "$RUNTIME_DIR/.venv/bin/python" ]] || [[ ! -f "$RUNTIME_DIR/src/app.py" ]]; then
+if [[ ! -x "$RUNTIME_DIR/.venv/bin/python" ]] || [[ ! -f "$RUNTIME_DIR/src/desktop_app.py" ]]; then
   osascript -e 'display notification "Configurando pela primeira vez… (pode levar alguns segundos)" with title "DocToMarkdown"' 2>/dev/null || true
-  # Try to re-run installer from GitHub if user deleted local runtime
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL https://raw.githubusercontent.com/diegombraga/DocToMarkdown/main/install.sh | bash --ci
   fi
 fi
 
-exec "$RUNTIME_DIR/.venv/bin/python" "$RUNTIME_DIR/src/app.py"
+# Native app: Flask + pywebview window in one process. Closing the window
+# terminates the process — no orphan servers, no browser tab confusion.
+exec "$RUNTIME_DIR/.venv/bin/python" "$RUNTIME_DIR/src/desktop_app.py"

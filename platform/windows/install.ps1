@@ -75,7 +75,7 @@ Log "Preparando $RuntimeDir"
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 $SrcDest = Join-Path $RuntimeDir "src"
 New-Item -ItemType Directory -Force -Path $SrcDest | Out-Null
-foreach ($item in @('app.py','mcp_server.py','templates','static','video','requirements.txt')) {
+foreach ($item in @('app.py','mcp_server.py','desktop_app.py','templates','static','video','requirements.txt')) {
     $s = Join-Path $RepoRoot $item
     $d = Join-Path $SrcDest $item
     if (Test-Path $s) {
@@ -121,7 +121,7 @@ Log "Criando atalho no Start Menu…"
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($LnkPath)
 $Shortcut.TargetPath       = $VenvPyw   # pythonw = no console window
-$Shortcut.Arguments        = "`"$SrcDest\app.py`""
+$Shortcut.Arguments        = "`"$SrcDest\desktop_app.py`""
 $Shortcut.WorkingDirectory = $SrcDest
 $Shortcut.IconLocation     = Join-Path $RepoRoot "platform\windows\Resources\AppIcon.ico"
 $Shortcut.Description      = "Convert any file to Markdown — locally and free"
