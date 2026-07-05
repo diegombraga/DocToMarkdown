@@ -5,908 +5,1307 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DocToMarkdown</title>
   <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
   <style>
-    :root {
-      --bg: #0f1115;
-      --panel: #161a22;
-      --panel-2: #1d2230;
-      --border: #2a3040;
-      --text: #e6e9ef;
-      --muted: #8892a6;
-      --accent: #6ea8fe;
-      --accent-2: #4c8dff;
-      --danger: #ff6b6b;
-      --ok: #4ade80;
-      --warn: #f5a524;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-    }
-    .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
-    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 12px; }
-    header .title-block { flex: 1; }
-    h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
-    .subtitle { color: var(--muted); font-size: 13px; }
-    header .settings-btn {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    header .settings-btn:hover { color: var(--text); }
+    /* ═════════════ Design tokens ═════════════ */
+    :root{
+      --bg:#F3F0E9;
+      --surface:#FBF9F4;
+      --surface-2:#F6F2E9;
+      --surface-3:#F4EFE4;
+      --surface-4:#FEFDFB;
 
-    /* Modal */
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,.7);
-      backdrop-filter: blur(4px);
-      display: none;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 60px 20px;
-      z-index: 50;
-    }
-    .modal-backdrop.open { display: flex; }
-    .modal {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      width: 100%;
-      max-width: 640px;
-      padding: 24px;
-      max-height: calc(100vh - 120px);
-      overflow-y: auto;
-    }
-    .modal h2 { margin: 0 0 4px 0; font-size: 18px; font-weight: 600; }
-    .modal .modal-sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
-    .modal .provider-row {
-      border-top: 1px solid var(--border);
-      padding: 16px 0;
-    }
-    .modal .provider-row:first-of-type { border-top: 0; }
-    .modal .provider-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-    .modal .provider-head strong { font-size: 14px; }
-    .provider-status { font-size: 12px; }
-    .provider-status.ok { color: var(--ok); }
-    .provider-status.off { color: var(--muted); }
-    .provider-status.env { color: var(--accent); }
-    .modal input[type=password], .modal input[type=text] { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
-    .modal .provider-actions { display: flex; gap: 6px; margin-top: 8px; }
-    .modal .close-btn {
-      background: transparent;
-      color: var(--muted);
-      border: 1px solid var(--border);
-      padding: 8px 14px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .modal .close-btn:hover { color: var(--text); }
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 20px;
-    }
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 16px;
-    }
-    .tabs {
-      display: flex;
-      gap: 4px;
-      background: var(--panel-2);
-      padding: 4px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      margin-bottom: 16px;
-      width: fit-content;
-    }
-    .tab {
-      background: transparent;
-      color: var(--muted);
-      border: 0;
-      padding: 8px 16px;
-      border-radius: 7px;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    .tab.active { background: var(--panel); color: var(--text); }
-    .pane { display: none; }
-    .pane.active { display: block; }
-    .dropzone {
-      border: 2px dashed var(--border);
-      border-radius: 12px;
-      padding: 40px 20px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-      background: var(--panel-2);
-    }
-    .dropzone.drag { border-color: var(--accent); background: rgba(110,168,254,.08); }
-    .dropzone strong { color: var(--text); }
-    .dropzone .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
-    #file { display: none; }
-    .filename { margin-top: 12px; color: var(--accent); font-size: 14px; word-break: break-all; }
-    .options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-top: 8px; }
-    @media (max-width: 640px) { .options { grid-template-columns: 1fr; } }
-    label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
-    label.field span { color: var(--text); }
-    input[type=text], input[type=url], select {
-      background: var(--panel-2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 9px 10px;
-      border-radius: 8px;
-      font-size: 14px;
-      width: 100%;
-    }
-    .row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-    .row input[type=checkbox], .row input[type=radio] { width: 16px; height: 16px; accent-color: var(--accent); }
-    .row .desc { color: var(--muted); font-size: 12px; }
-    .actions { display: flex; gap: 10px; margin-top: 16px; }
-    button {
-      background: var(--accent-2);
-      color: white;
-      border: 0;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    button:hover { background: var(--accent); }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-    button.ghost:hover { color: var(--text); }
-    .status { margin-top: 12px; font-size: 13px; }
-    .status.ok { color: var(--ok); }
-    .status.err { color: var(--danger); white-space: pre-wrap; }
-    .status.busy { color: var(--accent); }
-    .status.warn { color: var(--warn); }
-    .result-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
-    .result-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
-    .meta { color: var(--muted); font-size: 12px; }
-    pre {
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-      max-height: 500px;
-      overflow: auto;
-      font-size: 13px;
-      line-height: 1.55;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: #cfd6e4;
-      margin: 0;
-    }
-    details { color: var(--muted); font-size: 12px; margin-top: 8px; }
-    details pre { max-height: 200px; }
-    .lang-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-    .chip {
-      padding: 4px 10px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      font-size: 12px;
-      cursor: pointer;
-      color: var(--muted);
-      background: var(--panel-2);
-      user-select: none;
-    }
-    .chip.on { border-color: var(--accent); color: var(--accent); background: rgba(110,168,254,.08); }
-    .chip.readonly { cursor: default; }
-    .chip.readonly.off { opacity: 0.4; }
-    .hidden { display: none; }
+      --border:#E7E1D3;
+      --border-2:#E2DCCE;
+      --divider:#EBE5D7;
 
-    /* Video preview card */
-    .yt-preview {
-      display: flex;
-      gap: 14px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      margin-top: 12px;
-    }
-    .yt-preview img {
-      width: 160px;
-      height: 90px;
-      object-fit: cover;
-      border-radius: 6px;
-      background: #000;
-    }
-    .yt-preview .info { flex: 1; min-width: 0; font-size: 13px; }
-    .yt-preview .info h3 { margin: 0 0 4px 0; font-size: 15px; color: var(--text); font-weight: 600; line-height: 1.3; }
-    .yt-preview .info .subline { color: var(--muted); font-size: 12px; }
-    .yt-preview .badges { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-    .badge {
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      background: rgba(110,168,254,.12);
-      color: var(--accent);
-      border: 1px solid rgba(110,168,254,.3);
-    }
-    .badge.warn { background: rgba(245,165,36,.12); color: var(--warn); border-color: rgba(245,165,36,.3); }
-    .badge.off { background: transparent; color: var(--muted); border-color: var(--border); }
+      --text:#20201D;
+      --text-2:#3A3833;
+      --muted:#7C776B;
+      --muted-2:#8A857A;
+      --subtle:#A5A093;
 
-    /* Progress */
-    .progress-wrap { margin-top: 14px; }
-    .progress-bar {
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      height: 8px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      background: linear-gradient(90deg, var(--accent-2), var(--accent));
-      height: 100%;
-      width: 0%;
-      transition: width .3s;
-    }
-    .progress-text { color: var(--muted); font-size: 12px; margin-top: 6px; }
+      --accent:#D97757;
+      --accent-hover:#C96442;
+      --accent-dark:#B4562F;
+      --accent-dark-2:#C25E3A;
+      --accent-tint:#F5E4DB;
+      --accent-tint-border:#E0B7A4;
+      --accent-focus:rgba(217,119,87,.13);
 
-    /* Disclaimer */
-    .disclaimer {
-      color: var(--muted);
-      font-size: 11px;
-      margin-top: 8px;
-      padding: 8px 10px;
-      background: rgba(245,165,36,.05);
-      border-left: 2px solid var(--warn);
-      border-radius: 4px;
+      --success:#2E7D5B;
+      --success-2:#3DA574;
+      --success-bg:#E3F0E7;
+      --success-border:#C3E0CC;
+
+      --warn:#C99A3F;
+      --warn-2:#8A6D2E;
+      --warn-bg:#F6F0E4;
+      --warn-bg-2:#F3EAD3;
+      --warn-border:#E4D3A8;
+
+      --dark:#20201D;
+      --dark-2:#2B2823;
+      --dark-hover:#33322C;
+
+      --shadow-card:0 1px 2px rgba(60,50,30,.04);
+      --shadow-result:0 4px 20px rgba(60,50,30,.07);
+      --shadow-modal:0 24px 60px rgba(43,40,35,.28);
+      --shadow-accent:0 2px 8px rgba(217,119,87,.30);
+      --shadow-logo:0 2px 8px rgba(180,86,47,.28);
+
+      --font-sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      --font-serif:"Newsreader",Georgia,"Times New Roman",serif;
+      --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     }
+
+    *,*::before,*::after{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:var(--font-sans);
+      font-size:14px;
+      line-height:1.5;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+    }
+    ::selection{ background:#EBD9CE; color:var(--text); }
+    a{ color:var(--accent-dark); text-decoration:none; }
+    a:hover{ text-decoration:underline; }
+    button{ font-family:inherit; }
+
+    /* Custom scrollbar */
+    .dtm-scroll::-webkit-scrollbar{ width:10px; height:10px; }
+    .dtm-scroll::-webkit-scrollbar-thumb{ background:#D9D3C6; border-radius:20px; border:3px solid transparent; background-clip:padding-box; }
+    .dtm-scroll::-webkit-scrollbar-thumb:hover{ background:#C4BCAB; background-clip:padding-box; }
+
+    /* Animations */
+    @keyframes dtm-spin{ to{ transform:rotate(360deg); } }
+    @keyframes dtm-rise{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
+    @keyframes dtm-pulse{ 0%,100%{ opacity:.4; } 50%{ opacity:1; } }
+
+    /* Rendered Markdown */
+    .dtm-md h1{ font-family:var(--font-serif); font-weight:600; font-size:26px; line-height:1.25; margin:0 0 14px; letter-spacing:-.01em; color:var(--text); }
+    .dtm-md h2{ font-family:var(--font-serif); font-weight:600; font-size:20px; line-height:1.3; margin:26px 0 10px; color:var(--text); }
+    .dtm-md h3{ font-weight:600; font-size:15px; margin:20px 0 8px; color:var(--text-2); }
+    .dtm-md p{ margin:0 0 13px; }
+    .dtm-md ul,.dtm-md ol{ margin:0 0 13px; padding-left:22px; }
+    .dtm-md li{ margin:4px 0; }
+    .dtm-md code{ font-family:var(--font-mono); font-size:12.5px; background:#ECE7DC; padding:2px 6px; border-radius:5px; color:#8A4B34; }
+    .dtm-md pre{ background:var(--dark-2); color:#EDE7DA; padding:14px 16px; border-radius:10px; overflow:auto; margin:0 0 15px; }
+    .dtm-md pre code{ background:transparent; color:inherit; padding:0; font-size:12.5px; line-height:1.6; }
+    .dtm-md blockquote{ margin:0 0 14px; padding:2px 0 2px 16px; border-left:3px solid #D9A88F; color:#5B584F; }
+    .dtm-md hr{ border:0; border-top:1px solid var(--border-2); margin:22px 0; }
+    .dtm-md table{ border-collapse:collapse; width:100%; margin:0 0 15px; font-size:13px; display:block; overflow-x:auto; }
+    .dtm-md th,.dtm-md td{ border:1px solid var(--border-2); padding:8px 11px; text-align:left; }
+    .dtm-md th{ background:#EDE8DD; font-weight:600; }
+    .dtm-md strong{ font-weight:600; color:var(--text); }
+    .dtm-md a{ color:var(--accent-dark); }
+    .dtm-md img{ max-width:100%; border-radius:8px; }
+
+    /* ═════════════ Layout ═════════════ */
+    .page{ max-width:1080px; margin:0 auto; padding:34px 20px 80px; }
+
+    /* Header */
+    .app-header{ display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:34px; flex-wrap:wrap; }
+    .brand{ display:flex; align-items:center; gap:14px; min-width:0; }
+    .brand-logo{ width:44px; height:44px; border-radius:12px; background:var(--accent); box-shadow:var(--shadow-logo); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
+    .brand-text h1{ font-family:var(--font-serif); font-weight:600; font-size:27px; line-height:1.1; margin:0; letter-spacing:-.015em; color:var(--text); }
+    .brand-text p{ margin:2px 0 0; color:var(--muted); font-size:13.5px; }
+
+    .btn-settings{
+      background:var(--surface); border:1px solid var(--border-2); color:#5B584F;
+      padding:9px 14px; border-radius:10px; font-size:13.5px; font-weight:500;
+      display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+      transition:background .15s, border-color .15s, color .15s;
+    }
+    .btn-settings:hover{ background:#F4F0E7; border-color:#D6CFBE; color:var(--text); }
+
+    /* Tabs (segmented) */
+    .tabs{
+      display:inline-flex; background:#EAE5D9; padding:5px; border-radius:13px;
+      gap:4px; margin-bottom:22px;
+    }
+    .tab{
+      background:transparent; border:0; padding:9px 17px; border-radius:9px;
+      font-size:14px; font-weight:600; color:var(--muted);
+      display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+      transition:background .15s, color .15s, box-shadow .15s;
+    }
+    .tab.active{ background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(60,50,30,.12); }
+
+    .pane{ display:none; }
+    .pane.active{ display:block; animation:dtm-rise .25s ease; }
+
+    /* ═════════════ Cards ═════════════ */
+    .card{
+      background:var(--surface); border:1px solid var(--border); border-radius:18px;
+      padding:22px; box-shadow:var(--shadow-card);
+    }
+    .card-lite{ padding:8px; }
+
+    /* File tab grid */
+    .arquivo-grid{ display:grid; grid-template-columns:1.35fr 1fr; gap:18px; align-items:start; }
+    @media (max-width:720px){ .arquivo-grid{ grid-template-columns:1fr; } }
+
+    /* Dropzone */
+    .dropzone{
+      border:2px dashed #DCD5C6; border-radius:14px; padding:44px 24px;
+      text-align:center; background:var(--surface-2); cursor:pointer;
+      transition:background .15s, border-color .15s;
+      display:flex; flex-direction:column; align-items:center; gap:14px;
+    }
+    .dropzone.drag{ border-color:var(--accent); background:#F7ECE5; }
+    .dropzone-icon-empty{
+      width:64px; height:64px; border-radius:16px; background:#F1ECE1;
+      display:flex; align-items:center; justify-content:center; color:var(--accent-dark);
+    }
+    .dropzone-title{ font-size:16.5px; font-weight:600; color:var(--text); }
+    .dropzone-sub{ font-size:13px; color:var(--muted); }
+    .dropzone-sub .link{ color:var(--accent-dark); font-weight:500; }
+    .format-chips{ display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
+    .format-chip{
+      font-size:11.5px; color:var(--muted-2); background:#F1ECE1;
+      border-radius:20px; padding:3px 9px;
+    }
+    .dropzone-note{ font-size:12px; color:var(--subtle); }
+
+    .dropzone-file{ display:flex; flex-direction:column; align-items:center; gap:14px; animation:dtm-rise .25s ease; }
+    .dropzone-file-icon{ width:60px; height:60px; border-radius:16px; background:#F1E4DC; color:var(--accent-dark-2); display:flex; align-items:center; justify-content:center; }
+    .dropzone-file-name{ font-size:15px; font-weight:600; color:var(--text); word-break:break-all; max-width:520px; text-align:center; }
+    .dropzone-file-size{ font-size:13px; color:var(--muted-2); }
+
+    #file-input{ display:none; }
+
+    /* Section title */
+    .section-title{
+      font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+      color:var(--subtle); margin:0 0 14px;
+    }
+
+    /* Option rows */
+    .opt-row{ display:flex; align-items:flex-start; gap:12px; padding:10px 0; }
+    .opt-row .opt-body{ flex:1; min-width:0; }
+    .opt-row .opt-title{ font-size:14px; font-weight:500; color:var(--text-2); }
+    .opt-row .opt-desc{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+    .opt-row.disabled{ opacity:.5; pointer-events:none; }
+
+    /* Custom switch */
+    .switch{
+      appearance:none; width:38px; height:22px; border-radius:20px; background:#D9D3C6;
+      position:relative; cursor:pointer; margin:0; flex-shrink:0;
+      transition:background .18s; outline:0; border:0;
+    }
+    .switch::before{
+      content:""; position:absolute; top:2px; left:2px;
+      width:18px; height:18px; border-radius:50%; background:#fff;
+      box-shadow:0 1px 3px rgba(0,0,0,.15); transition:transform .18s;
+    }
+    .switch:checked{ background:var(--accent); }
+    .switch:checked::before{ transform:translateX(16px); }
+
+    /* Divider */
+    .divider{ border:0; border-top:1px solid var(--divider); margin:16px 0; }
+
+    /* Chips (language) */
+    .chip-row{ display:flex; flex-wrap:wrap; gap:6px; }
+    .chip{
+      border-radius:20px; padding:5px 12px; font-size:12.5px; font-weight:500;
+      cursor:pointer; user-select:none;
+      border:1px solid var(--border-2); color:var(--muted-2); background:#F4F0E7;
+      transition:all .15s;
+    }
+    .chip.on{ border-color:var(--accent-tint-border); color:var(--accent-dark); background:var(--accent-tint); }
+
+    /* Buttons */
+    .btn{
+      display:inline-flex; align-items:center; gap:8px;
+      border-radius:12px; padding:12px 22px; font-size:14.5px; font-weight:600;
+      cursor:pointer; border:0; transition:all .15s;
+    }
+    .btn-primary{ background:var(--accent); color:#fff; box-shadow:var(--shadow-accent); }
+    .btn-primary:hover:not(:disabled){ background:var(--accent-hover); }
+    .btn-primary:disabled{ background:#E5DFD1; color:#A8A293; cursor:not-allowed; box-shadow:none; }
+    .btn-dark{ background:var(--dark); color:#F8F5EE; }
+    .btn-dark:hover:not(:disabled){ background:var(--dark-hover); }
+    .btn-ghost{
+      background:#F1ECE1; border:1px solid var(--border-2); color:var(--text-2);
+      padding:9px 14px; border-radius:10px; font-size:13.5px; font-weight:500;
+    }
+    .btn-ghost:hover{ background:#EAE5D9; color:var(--text); }
+    .btn-sm{ padding:9px 14px; font-size:13.5px; border-radius:10px; }
+
+    .action-bar{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:6px; }
+    .action-hint{ font-size:13px; color:#9A9488; }
+
+    .spinner{
+      width:16px; height:16px; border:2px solid rgba(255,255,255,.4);
+      border-top-color:#fff; border-radius:50%; display:inline-block;
+      animation:dtm-spin .7s linear infinite;
+    }
+
+    /* ═════════════ Video tab ═════════════ */
+    .video-stack{ display:flex; flex-direction:column; gap:18px; }
+
+    .field-label{ display:block; font-size:13px; color:var(--text-2); margin-bottom:8px; font-weight:500; }
+    .input,.select{
+      width:100%; background:#fff; border:1px solid var(--border-2); color:var(--text);
+      border-radius:11px; padding:11px 13px; font-family:inherit; font-size:14px;
+      transition:border-color .15s, box-shadow .15s;
+    }
+    .input:focus,.select:focus{ outline:0; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-focus); }
+    .select{ appearance:none; background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237C776B' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 12px center; padding-right:34px; }
+
+    .url-row{ display:flex; gap:10px; }
+    .url-row .input{ flex:1; }
+
+    .warn-box{
+      display:flex; align-items:flex-start; gap:10px;
+      background:var(--warn-bg); border-radius:9px; padding:10px 12px;
+      margin-top:12px; color:var(--muted-2); font-size:12px;
+    }
+    .warn-box svg{ color:var(--warn); flex-shrink:0; margin-top:1px; }
+
+    .video-preview{
+      display:flex; gap:15px; background:var(--surface-3); border:1px solid var(--border);
+      border-radius:13px; padding:13px; margin-top:16px; animation:dtm-rise .3s ease;
+    }
+    .video-preview img{ width:168px; height:95px; object-fit:cover; border-radius:8px; background:#000; flex-shrink:0; }
+    .video-preview .info{ flex:1; min-width:0; }
+    .video-preview h3{ margin:0 0 4px; font-size:15px; font-weight:600; color:var(--text); line-height:1.3; }
+    .video-preview .subline{ color:var(--muted); font-size:12.5px; margin-bottom:8px; }
+    .video-preview .badges{ display:flex; gap:6px; flex-wrap:wrap; }
+    .badge{
+      font-size:11.5px; padding:3px 9px; border-radius:20px; border:1px solid;
+    }
+    .badge.sub-manual{ color:var(--success); background:var(--success-bg); border-color:var(--success-border); }
+    .badge.sub-auto{ color:var(--warn-2); background:var(--warn-bg-2); border-color:var(--warn-border); }
+    .badge.sub-none{ color:var(--muted); background:#F1ECE1; border-color:var(--border-2); }
+    .badge.chapters{ color:var(--warn-2); background:var(--warn-bg-2); border-color:var(--warn-border); }
+
+    .video-opts-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 22px; }
+    @media (max-width:720px){ .video-opts-grid{ grid-template-columns:1fr; } }
+
+    .progress-block{ margin-top:16px; }
+    .progress-track{ height:8px; background:var(--divider); border-radius:20px; overflow:hidden; }
+    .progress-fill{
+      height:100%; width:0%;
+      background:linear-gradient(90deg, var(--accent), #E8A588);
+      transition:width .5s ease;
+    }
+    .progress-meta{ margin-top:10px; display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); }
+    .progress-dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); animation:dtm-pulse 1s ease infinite; }
+
+    /* ═════════════ Result card ═════════════ */
+    .result-card{
+      background:var(--surface); border:1px solid var(--border); border-radius:18px;
+      margin-top:22px; overflow:hidden; box-shadow:var(--shadow-result); animation:dtm-rise .35s ease;
+    }
+    .result-head{
+      display:flex; align-items:center; justify-content:space-between; gap:16px;
+      padding:18px 22px; border-bottom:1px solid var(--divider); flex-wrap:wrap;
+    }
+    .result-head-left{ display:flex; align-items:center; gap:12px; min-width:0; }
+    .result-check{ width:34px; height:34px; border-radius:50%; background:var(--success-bg); color:var(--success); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .result-title-block{ min-width:0; }
+    .result-title{ font-weight:600; font-size:15px; color:var(--text); }
+    .result-meta{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+    .result-head-right{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+
+    .view-toggle{ display:inline-flex; background:#EEE9DD; padding:3px; border-radius:9px; gap:2px; }
+    .view-toggle button{
+      background:transparent; border:0; padding:6px 12px; border-radius:7px;
+      font-size:12.5px; font-weight:500; color:var(--muted); cursor:pointer;
+      transition:background .15s, color .15s, box-shadow .15s;
+    }
+    .view-toggle button.active{ background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(60,50,30,.1); }
+
+    .result-body-rendered{
+      padding:26px 30px; max-height:540px; overflow:auto;
+      font-size:14px; line-height:1.62; color:#33322C;
+    }
+    .result-body-raw{
+      margin:0; padding:22px 26px; max-height:540px; overflow:auto;
+      font-family:var(--font-mono); font-size:12.5px; line-height:1.65; color:#4A473F;
+      background:var(--surface-2); white-space:pre-wrap; word-break:break-word;
+    }
+    .artifact-list{ padding:12px 22px; border-top:1px solid var(--divider); font-size:13px; display:flex; flex-wrap:wrap; gap:12px; }
+    .artifact-list a{ color:var(--accent-dark); }
+    .hidden{ display:none !important; }
+
+    /* ═════════════ Settings modal ═════════════ */
+    .modal-backdrop{
+      position:fixed; inset:0; background:rgba(43,40,35,.42);
+      backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+      display:none; align-items:flex-start; justify-content:center; padding:64px 20px;
+      z-index:50;
+    }
+    .modal-backdrop.open{ display:flex; animation:dtm-rise .2s ease; }
+    .modal-panel{
+      background:var(--surface); border:1px solid var(--border); border-radius:18px;
+      width:100%; max-width:600px; max-height:calc(100vh - 128px); overflow:auto;
+      box-shadow:var(--shadow-modal);
+    }
+    .modal-head{
+      padding:22px 24px 4px; display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+    }
+    .modal-head h2{ font-family:var(--font-serif); font-weight:600; font-size:21px; margin:0; color:var(--text); }
+    .modal-head .sub{ font-size:12.5px; color:var(--muted); margin-top:6px; }
+    .modal-close{
+      width:32px; height:32px; border-radius:50%; background:#F1ECE1; border:0;
+      color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center;
+      transition:background .15s;
+    }
+    .modal-close:hover{ background:#E7E1D3; color:var(--text); }
+
+    .provider{
+      padding:16px 24px; border-top:1px solid var(--divider);
+    }
+    .provider:first-of-type{ border-top:0; margin-top:6px; }
+    .provider-head{
+      display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px;
+    }
+    .provider-name{ font-weight:600; font-size:14px; color:var(--text); }
+    .provider-status{ display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .provider-status .dot{ width:8px; height:8px; border-radius:50%; background:#C4BCAB; }
+    .provider-status.ok{ color:var(--success); }
+    .provider-status.ok .dot{ background:var(--success-2); }
+    .provider-status.env{ color:var(--accent-dark); }
+    .provider-status.env .dot{ background:var(--accent); }
+    .provider-desc{ font-size:12px; color:var(--muted); margin-bottom:8px; }
+    .provider-row{ display:flex; gap:8px; }
+    .provider-row .input{ flex:1; font-family:var(--font-mono); font-size:12px; }
+
+    /* Status text (busy / ok / err) */
+    .status-line{ margin-top:12px; font-size:13px; }
+    .status-line.ok{ color:var(--success); }
+    .status-line.err{ color:#B4562F; white-space:pre-wrap; }
+    .status-line.busy{ color:var(--accent-dark); }
+    .status-line.warn{ color:var(--warn-2); }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div class="title-block">
-        <h1>DocToMarkdown</h1>
-        <div class="subtitle">markitdown + ocrmypdf + yt-dlp + Whisper · qualquer arquivo ou vídeo → Markdown</div>
+  <div class="page">
+    <!-- ═══════════════════ Header ═══════════════════ -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+        </div>
+        <div class="brand-text">
+          <h1>DocToMarkdown</h1>
+          <p>Qualquer arquivo ou vídeo, transformado em Markdown limpo — tudo local.</p>
+        </div>
       </div>
-      <button class="settings-btn" id="open-settings">⚙ Configurações</button>
+      <button class="btn-settings" id="open-settings" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Configurações
+      </button>
     </header>
 
-    <!-- Modal de configurações -->
-    <div class="modal-backdrop" id="settings-modal" role="dialog" aria-modal="true">
-      <div class="modal">
-        <h2>Chaves de API para análise visual</h2>
-        <div class="modal-sub">
-          Opcional. Sem chave, o app entrega transcript + OCR do texto na tela.
-          Com chave, cada frame também recebe uma descrição visual scene-by-scene.
-          Chaves são salvas em <code style="color:var(--text)">~/.config/DocToMarkdown/keys.json</code> com permissão 600 (só você lê).
-        </div>
-
-        <div class="provider-row" data-provider="anthropic">
-          <div class="provider-head">
-            <strong>Anthropic — Claude Sonnet 4.5</strong>
-            <span class="provider-status" id="status-anthropic">carregando…</span>
-          </div>
-          <div class="desc" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
-            Chave começa com <code>sk-ant-</code>. Custo médio ~US$0.30-0.50 por vídeo de 30min.
-          </div>
-          <input type="password" placeholder="sk-ant-…" id="input-anthropic" autocomplete="off" />
-          <div class="provider-actions">
-            <button class="save-key" data-p="anthropic">Salvar</button>
-            <button class="ghost del-key" data-p="anthropic">Remover</button>
-            <button class="ghost toggle-visibility" data-target="input-anthropic">Mostrar</button>
-          </div>
-        </div>
-
-        <div class="provider-row" data-provider="openai">
-          <div class="provider-head">
-            <strong>OpenAI — GPT-4o mini</strong>
-            <span class="provider-status" id="status-openai">carregando…</span>
-          </div>
-          <div class="desc" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
-            Chave começa com <code>sk-</code>. Custo médio ~US$0.05-0.10 por vídeo de 30min.
-          </div>
-          <input type="password" placeholder="sk-…" id="input-openai" autocomplete="off" />
-          <div class="provider-actions">
-            <button class="save-key" data-p="openai">Salvar</button>
-            <button class="ghost del-key" data-p="openai">Remover</button>
-            <button class="ghost toggle-visibility" data-target="input-openai">Mostrar</button>
-          </div>
-        </div>
-
-        <div class="provider-row" data-provider="gemini">
-          <div class="provider-head">
-            <strong>Google — Gemini 2.0 Flash</strong>
-            <span class="provider-status" id="status-gemini">carregando…</span>
-          </div>
-          <div class="desc" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
-            Obtenha em <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com/apikey</a>. Custo médio ~US$0.02-0.05.
-          </div>
-          <input type="password" placeholder="AI…" id="input-gemini" autocomplete="off" />
-          <div class="provider-actions">
-            <button class="save-key" data-p="gemini">Salvar</button>
-            <button class="ghost del-key" data-p="gemini">Remover</button>
-            <button class="ghost toggle-visibility" data-target="input-gemini">Mostrar</button>
-          </div>
-        </div>
-
-        <div class="status" id="settings-status"></div>
-
-        <div class="modal-footer">
-          <button class="close-btn" id="close-settings">Fechar</button>
-        </div>
-      </div>
+    <!-- ═══════════════════ Tabs ═══════════════════ -->
+    <div class="tabs" role="tablist">
+      <button class="tab active" role="tab" data-tab="arquivo" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Arquivo
+      </button>
+      <button class="tab" role="tab" data-tab="video" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+        Vídeo / URL
+      </button>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="arquivo">📄 Arquivo</button>
-      <button class="tab" data-tab="video">🎬 Vídeo / URL</button>
-    </div>
-
-    <!-- ═══════════════════ TAB ARQUIVO ═══════════════════ -->
+    <!-- ═══════════════════ Pane Arquivo ═══════════════════ -->
     <div class="pane active" id="pane-arquivo">
-      <div class="card">
-        <div id="dropzone" class="dropzone">
-          <strong>Arraste um arquivo aqui</strong> · ou clique para escolher
-          <div class="hint">Máximo 500 MB · PDF, DOCX, PPTX, XLSX, imagens, HTML, EPUB, áudio&hellip;</div>
-          <div class="filename" id="filename"></div>
-        </div>
-        <input type="file" id="file" />
-      </div>
-
-      <div class="card">
-        <div class="row" style="margin-bottom: 12px;">
-          <input type="checkbox" id="use_ocr" />
-          <label for="use_ocr"><span>Rodar OCR no PDF antes de converter</span></label>
-        </div>
-        <div class="row" style="margin-bottom: 6px;">
-          <input type="checkbox" id="force_ocr" />
-          <label for="force_ocr">
-            Forçar OCR <span class="desc">(refaz mesmo se o PDF já tem texto)</span>
-          </label>
-        </div>
-
-        <div style="margin-top: 14px;">
-          <label class="field">
-            <span>Idiomas do OCR</span>
-            <div class="lang-chips" id="chips">
-              <span class="chip on" data-l="por">Português</span>
-              <span class="chip on" data-l="eng">Inglês</span>
-              <span class="chip" data-l="spa">Espanhol</span>
-              <span class="chip" data-l="fra">Francês</span>
-              <span class="chip" data-l="ita">Italiano</span>
-              <span class="chip" data-l="deu">Alemão</span>
+      <div class="arquivo-grid">
+        <!-- Dropzone card -->
+        <div class="card card-lite">
+          <div class="dropzone" id="dropzone">
+            <div id="dz-empty">
+              <div class="dropzone-icon-empty" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <div class="dropzone-title">Arraste um arquivo aqui</div>
+              <div class="dropzone-sub">ou <span class="link">clique para escolher</span></div>
+              <div class="format-chips">
+                <span class="format-chip">PDF</span>
+                <span class="format-chip">DOCX</span>
+                <span class="format-chip">PPTX</span>
+                <span class="format-chip">XLSX</span>
+                <span class="format-chip">Imagens</span>
+                <span class="format-chip">HTML</span>
+                <span class="format-chip">EPUB</span>
+                <span class="format-chip">Áudio</span>
+              </div>
+              <div class="dropzone-note">Máximo 500 MB · nada sai da sua máquina</div>
             </div>
-            <input type="text" id="langs" value="por+eng" style="margin-top: 8px;" />
-          </label>
+            <div id="dz-file" class="dropzone-file hidden">
+              <div class="dropzone-file-icon" aria-hidden="true">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <div class="dropzone-file-name" id="dz-file-name"></div>
+              <div class="dropzone-file-size" id="dz-file-size"></div>
+              <button class="btn-ghost" id="dz-swap" type="button">Trocar arquivo</button>
+            </div>
+          </div>
+          <input type="file" id="file-input" />
         </div>
 
-        <div class="actions">
-          <button id="convert" disabled>Converter</button>
-          <button class="ghost" id="reset">Limpar</button>
+        <!-- OCR options card -->
+        <div class="card">
+          <div class="section-title">Opções de OCR</div>
+
+          <div class="opt-row">
+            <input type="checkbox" id="opt-ocr" class="switch" />
+            <div class="opt-body">
+              <label for="opt-ocr" class="opt-title">Rodar OCR antes de converter</label>
+              <div class="opt-desc">Para PDFs escaneados sem camada de texto.</div>
+            </div>
+          </div>
+
+          <div class="opt-row disabled" id="opt-row-force">
+            <input type="checkbox" id="opt-force" class="switch" />
+            <div class="opt-body">
+              <label for="opt-force" class="opt-title">Forçar OCR</label>
+              <div class="opt-desc">Refaz mesmo se o PDF já tiver texto.</div>
+            </div>
+          </div>
+
+          <hr class="divider" />
+
+          <div class="section-title" style="margin-bottom:10px;">Idiomas do OCR</div>
+          <div class="chip-row" id="lang-chips">
+            <span class="chip on" data-l="por">Português</span>
+            <span class="chip on" data-l="eng">Inglês</span>
+            <span class="chip" data-l="spa">Espanhol</span>
+            <span class="chip" data-l="fra">Francês</span>
+            <span class="chip" data-l="ita">Italiano</span>
+            <span class="chip" data-l="deu">Alemão</span>
+          </div>
         </div>
-        <div class="status" id="status"></div>
       </div>
+
+      <!-- Action bar (spans grid) -->
+      <div class="action-bar" style="margin-top:22px;">
+        <button class="btn btn-primary" id="btn-convert" type="button" disabled>
+          <span id="btn-convert-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </span>
+          <span id="btn-convert-label">Converter para Markdown</span>
+        </button>
+        <span class="action-hint" id="convert-hint">Selecione um arquivo para começar.</span>
+      </div>
+      <div class="status-line" id="convert-status"></div>
     </div>
 
-    <!-- ═══════════════════ TAB VÍDEO ═══════════════════ -->
+    <!-- ═══════════════════ Pane Vídeo / URL ═══════════════════ -->
     <div class="pane" id="pane-video">
-      <div class="card">
-        <label class="field">
-          <span>URL do vídeo</span>
-          <input type="url" id="video-url" placeholder="https://www.youtube.com/watch?v=..." />
-        </label>
-        <div class="disclaimer">
-          ⚠ Você é responsável por respeitar direitos autorais e os Termos de Uso da plataforma de origem.
-        </div>
-        <div class="actions">
-          <button id="preview-btn">Prever</button>
-          <button class="ghost" id="video-reset">Limpar</button>
-        </div>
-        <div id="preview-area"></div>
-        <div class="status" id="preview-status"></div>
-      </div>
-
-      <div class="card hidden" id="video-options-card">
-        <div style="font-size: 14px; margin-bottom: 12px; font-weight: 600;">Opções de processamento</div>
-
-        <div class="row" style="margin-bottom: 8px;">
-          <input type="checkbox" id="opt-video" />
-          <label for="opt-video"><span>Baixar vídeo (MP4)</span></label>
-        </div>
-        <div class="row" style="margin-bottom: 14px;">
-          <input type="checkbox" id="opt-audio" />
-          <label for="opt-audio"><span>Baixar áudio (MP3)</span></label>
+      <div class="video-stack">
+        <!-- URL card -->
+        <div class="card">
+          <label class="field-label" for="video-url">URL do vídeo</label>
+          <div class="url-row">
+            <input type="url" id="video-url" class="input" placeholder="https://www.youtube.com/watch?v=..." />
+            <button class="btn btn-dark btn-sm" id="btn-preview" type="button">Prever</button>
+          </div>
+          <div class="warn-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>Você é responsável por respeitar direitos autorais e os Termos de Uso da plataforma.</span>
+          </div>
+          <div id="video-preview-area"></div>
+          <div class="status-line" id="preview-status"></div>
         </div>
 
-        <label class="field" style="margin-bottom: 14px;">
-          <span>Fonte da transcrição</span>
-          <select id="opt-transcript">
-            <option value="auto">Automático (usa legenda se existir, senão Whisper)</option>
-            <option value="subs">Só legenda nativa (falha se não tiver)</option>
-            <option value="whisper">Whisper local (sempre re-transcreve, mais fiel)</option>
-          </select>
-        </label>
+        <!-- Options card -->
+        <div class="card hidden" id="video-opts-card">
+          <div class="section-title">Opções de processamento</div>
 
-        <label class="field hidden" id="whisper-model-field" style="margin-bottom: 14px;">
-          <span>Modelo Whisper</span>
-          <select id="opt-whisper-model">
-            <option value="tiny">tiny (40MB, mais rápido, qualidade baixa)</option>
-            <option value="base" selected>base (150MB, boa qualidade)</option>
-            <option value="small">small (500MB, muito boa)</option>
-            <option value="medium">medium (1.5GB, excelente — lento)</option>
-          </select>
-        </label>
+          <div class="video-opts-grid">
+            <div class="opt-row" style="padding:0;">
+              <input type="checkbox" id="opt-dl-video" class="switch" />
+              <div class="opt-body">
+                <label for="opt-dl-video" class="opt-title">Baixar vídeo (MP4)</label>
+                <div class="opt-desc">Salva o arquivo além do Markdown.</div>
+              </div>
+            </div>
+            <div class="opt-row" style="padding:0;">
+              <input type="checkbox" id="opt-dl-audio" class="switch" />
+              <div class="opt-body">
+                <label for="opt-dl-audio" class="opt-title">Baixar áudio (MP3)</label>
+                <div class="opt-desc">Útil para podcasts e palestras.</div>
+              </div>
+            </div>
 
-        <label class="field" style="margin-bottom: 6px;">
-          <span>Análise visual dos frames</span>
-          <select id="opt-vision">
-            <option value="none">Nenhuma (só OCR do texto na tela)</option>
-            <option value="anthropic">Anthropic — Claude Sonnet 4.5 (vision)</option>
-            <option value="openai">OpenAI — GPT-4o mini</option>
-            <option value="gemini">Google — Gemini 2.0 Flash</option>
-          </select>
-        </label>
-        <div class="desc" id="vision-hint" style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
-          Requer chave de API no environment (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY).
+            <div>
+              <label class="field-label" for="opt-transcript">Fonte da transcrição</label>
+              <select id="opt-transcript" class="select">
+                <option value="auto">Automático (legenda se houver, senão Whisper)</option>
+                <option value="subs">Só legenda nativa</option>
+                <option value="whisper">Whisper local (sempre re-transcreve)</option>
+              </select>
+            </div>
+
+            <div id="whisper-model-wrap">
+              <label class="field-label" for="opt-whisper-model">Modelo Whisper</label>
+              <select id="opt-whisper-model" class="select">
+                <option value="tiny">tiny (40 MB · rápido, qualidade baixa)</option>
+                <option value="base" selected>base (150 MB · boa qualidade)</option>
+                <option value="small">small (500 MB · muito boa)</option>
+                <option value="medium">medium (1.5 GB · excelente — lento)</option>
+              </select>
+            </div>
+
+            <div style="grid-column:1 / -1;">
+              <label class="field-label" for="opt-vision">Análise visual dos frames</label>
+              <select id="opt-vision" class="select">
+                <option value="none">Nenhuma (só OCR do texto na tela)</option>
+                <option value="anthropic">Anthropic — Claude Sonnet 4.5</option>
+                <option value="openai">OpenAI — GPT-4o mini</option>
+                <option value="gemini">Google — Gemini 2.0 Flash</option>
+              </select>
+              <div class="opt-desc" id="vision-hint" style="margin-top:6px;">
+                Requer chave de API configurada em ⚙ Configurações.
+              </div>
+            </div>
+          </div>
+
+          <div class="action-bar" style="margin-top:18px;">
+            <button class="btn btn-primary" id="btn-process" type="button">
+              <span id="btn-process-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </span>
+              <span id="btn-process-label">Processar vídeo</span>
+            </button>
+          </div>
+
+          <div class="progress-block hidden" id="progress-block">
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+            <div class="progress-meta">
+              <span class="progress-dot"></span>
+              <span id="progress-text">Iniciando…</span>
+            </div>
+          </div>
+
+          <div class="status-line" id="video-status"></div>
         </div>
-
-        <div class="actions">
-          <button id="process-btn">Processar</button>
-        </div>
-
-        <div class="progress-wrap hidden" id="video-progress">
-          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-          <div class="progress-text" id="progress-text">Iniciando…</div>
-        </div>
-
-        <div class="status" id="video-status"></div>
       </div>
     </div>
 
-    <!-- ═══════════════════ RESULT ═══════════════════ -->
-    <div class="card hidden" id="resultCard">
+    <!-- ═══════════════════ Result card (shared) ═══════════════════ -->
+    <div class="result-card hidden" id="result-card">
       <div class="result-head">
-        <h2>Resultado</h2>
-        <div>
-          <span class="meta" id="meta"></span>
-          <button id="copy" class="ghost" style="margin-left: 8px;">Copiar</button>
-          <button id="download">Baixar .md</button>
+        <div class="result-head-left">
+          <div class="result-check" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="result-title-block">
+            <div class="result-title">Markdown pronto</div>
+            <div class="result-meta" id="result-meta"></div>
+          </div>
+        </div>
+        <div class="result-head-right">
+          <div class="view-toggle" role="tablist">
+            <button class="active" data-view="rendered" type="button">Prévia</button>
+            <button data-view="raw" type="button">Markdown</button>
+          </div>
+          <button class="btn-ghost" id="btn-copy" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copiar
+          </button>
+          <button class="btn-ghost" id="btn-download" type="button" style="background:var(--accent); border-color:var(--accent); color:#fff;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Baixar .md
+          </button>
         </div>
       </div>
-      <div id="artifacts-list" class="hidden" style="margin-bottom: 10px; font-size: 13px; color: var(--muted);"></div>
-      <pre id="output"></pre>
-      <details id="logDetails" class="hidden">
-        <summary>Log</summary>
-        <pre id="log"></pre>
-      </details>
+      <div class="result-body-rendered dtm-md dtm-scroll" id="result-rendered"></div>
+      <pre class="result-body-raw dtm-scroll hidden" id="result-raw"></pre>
+      <div class="artifact-list hidden" id="artifact-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ Settings modal ═══════════════════ -->
+  <div class="modal-backdrop" id="settings-modal" role="dialog" aria-modal="true">
+    <div class="modal-panel dtm-scroll">
+      <div class="modal-head">
+        <div>
+          <h2>Chaves de API</h2>
+          <div class="sub">Para análise visual dos frames. Salvas em <code>~/.config/DocToMarkdown/keys.json</code> com permissão 600 (só você lê).</div>
+        </div>
+        <button class="modal-close" id="close-settings" type="button" aria-label="Fechar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="provider" data-provider="anthropic">
+        <div class="provider-head">
+          <div class="provider-name">Anthropic — Claude Sonnet 4.5</div>
+          <span class="provider-status" id="st-anthropic"><span class="dot"></span><span>carregando…</span></span>
+        </div>
+        <div class="provider-desc">Chave começa com <code>sk-ant-</code>. Custo médio ~US$ 0,30–0,50 por vídeo de 30 min.</div>
+        <div class="provider-row">
+          <input type="password" class="input" placeholder="sk-ant-…" id="in-anthropic" autocomplete="off" />
+          <button class="btn-ghost" data-save="anthropic" type="button">Salvar</button>
+          <button class="btn-ghost" data-del="anthropic" type="button">Remover</button>
+        </div>
+      </div>
+
+      <div class="provider" data-provider="openai">
+        <div class="provider-head">
+          <div class="provider-name">OpenAI — GPT-4o mini</div>
+          <span class="provider-status" id="st-openai"><span class="dot"></span><span>carregando…</span></span>
+        </div>
+        <div class="provider-desc">Chave começa com <code>sk-</code>. Custo médio ~US$ 0,05–0,10 por vídeo.</div>
+        <div class="provider-row">
+          <input type="password" class="input" placeholder="sk-…" id="in-openai" autocomplete="off" />
+          <button class="btn-ghost" data-save="openai" type="button">Salvar</button>
+          <button class="btn-ghost" data-del="openai" type="button">Remover</button>
+        </div>
+      </div>
+
+      <div class="provider" data-provider="gemini">
+        <div class="provider-head">
+          <div class="provider-name">Google — Gemini 2.0 Flash</div>
+          <span class="provider-status" id="st-gemini"><span class="dot"></span><span>carregando…</span></span>
+        </div>
+        <div class="provider-desc">Obtenha em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Custo médio ~US$ 0,02–0,05.</div>
+        <div class="provider-row">
+          <input type="password" class="input" placeholder="AI…" id="in-gemini" autocomplete="off" />
+          <button class="btn-ghost" data-save="gemini" type="button">Salvar</button>
+          <button class="btn-ghost" data-del="gemini" type="button">Remover</button>
+        </div>
+      </div>
+
+      <div class="status-line" id="settings-status" style="padding:0 24px 22px;"></div>
     </div>
   </div>
 
 <script>
-const $ = (id) => document.getElementById(id);
-let currentFile = null;
-let currentMd = "";
-let currentName = "output.md";
-let visionAvailability = {};
+"use strict";
 
-// ---------------- Tab switching ----------------
-document.querySelectorAll(".tab").forEach(t => {
-  t.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
-    t.classList.add("active");
-    document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
-    $("pane-" + t.dataset.tab).classList.add("active");
-    $("resultCard").classList.add("hidden");
-  });
-});
+/* ═════════════════════════════════════════════════════════════
+   Utilities
+   ═════════════════════════════════════════════════════════════ */
+const $  = (id)   => document.getElementById(id);
+const $$ = (sel)  => Array.from(document.querySelectorAll(sel));
 
-// ---------------- Settings modal ----------------
-const modal = $("settings-modal");
-$("open-settings").addEventListener("click", () => { modal.classList.add("open"); refreshKeyStatus(); });
-$("close-settings").addEventListener("click", () => modal.classList.remove("open"));
-modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("open"); });
+function esc(s){
+  return String(s ?? "").replace(/[<>&"']/g, c =>
+    ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]);
+}
 
-async function refreshKeyStatus() {
-  try {
-    const s = await fetch("/settings/keys").then(r => r.json());
-    for (const p of ["anthropic", "openai", "gemini"]) {
-      const el = $(`status-${p}`);
-      const info = s[p] || {};
-      if (info.from_launch_env) {
-        el.className = "provider-status env";
-        el.textContent = `✓ configurado via env var · ${info.masked || ""}`;
-      } else if (info.configured) {
-        el.className = "provider-status ok";
-        el.textContent = `✓ salvo · ${info.masked || ""}`;
-      } else {
-        el.className = "provider-status off";
-        el.textContent = "○ não configurado";
+/* Minimal Markdown → HTML renderer.
+   Handles headings, paragraphs, bold/italic, inline code, fenced code,
+   blockquote, lists (ul/ol), horizontal rule, links, tables. This is what
+   markitdown + our video merger emit — no need for a full CommonMark. */
+function renderMarkdown(md){
+  if (!md) return "";
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let i = 0;
+
+  function inline(text){
+    // Escape first, then apply inline patterns on the escaped string.
+    let s = esc(text);
+    // Fenced-inline code protected
+    const codeStore = [];
+    s = s.replace(/`([^`]+)`/g, (_,c)=>{
+      codeStore.push(c);
+      return `\x00${codeStore.length-1}\x00`;
+    });
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+         .replace(/\*([^*]+)\*/g,     "<em>$1</em>")
+         .replace(/(^|\s)_([^_]+)_/g, "$1<em>$2</em>")
+         .replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+                  '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/\x00(\d+)\x00/g, (_,n)=>`<code>${codeStore[+n]}</code>`);
+    return s;
+  }
+
+  while (i < lines.length){
+    let line = lines[i];
+
+    // Fenced code block
+    if (/^```/.test(line)){
+      const lang = line.replace(/^```/,"").trim();
+      i++;
+      const buf = [];
+      while (i < lines.length && !/^```/.test(lines[i])){ buf.push(lines[i]); i++; }
+      i++; // skip closing fence
+      const langCls = lang ? ` class="lang-${esc(lang)}"` : "";
+      out.push(`<pre><code${langCls}>${esc(buf.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^(?:---|\*\*\*|___)\s*$/.test(line)){ out.push("<hr/>"); i++; continue; }
+
+    // Heading
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h){
+      const lv = h[1].length;
+      out.push(`<h${lv}>${inline(h[2])}</h${lv}>`);
+      i++; continue;
+    }
+
+    // Blockquote (consecutive lines starting with >)
+    if (/^>\s?/.test(line)){
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])){
+        buf.push(lines[i].replace(/^>\s?/, ""));
+        i++;
       }
+      out.push(`<blockquote>${inline(buf.join(" "))}</blockquote>`);
+      continue;
     }
-    // Also refresh the availability used by the video tab
-    visionAvailability = {
-      anthropic: s.anthropic?.configured || false,
-      openai: s.openai?.configured || false,
-      gemini: s.gemini?.configured || false,
-    };
-    updateVisionHint();
-  } catch {}
+
+    // Unordered list
+    if (/^[-*+]\s+/.test(line)){
+      const items = [];
+      while (i < lines.length && /^[-*+]\s+/.test(lines[i])){
+        items.push(lines[i].replace(/^[-*+]\s+/, ""));
+        i++;
+      }
+      out.push("<ul>" + items.map(x=>`<li>${inline(x)}</li>`).join("") + "</ul>");
+      continue;
+    }
+
+    // Ordered list
+    if (/^\d+\.\s+/.test(line)){
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])){
+        items.push(lines[i].replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      out.push("<ol>" + items.map(x=>`<li>${inline(x)}</li>`).join("") + "</ol>");
+      continue;
+    }
+
+    // Table
+    if (i+1 < lines.length &&
+        /\|/.test(line) &&
+        /^\s*\|?\s*:?-{2,}/.test(lines[i+1])){
+      const parseRow = r => r.replace(/^\s*\||\|\s*$/g, "").split("|").map(c=>c.trim());
+      const head = parseRow(line);
+      i += 2; // skip separator
+      const rows = [];
+      while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim().length > 0){
+        rows.push(parseRow(lines[i])); i++;
+      }
+      let html = "<table><thead><tr>";
+      html += head.map(c=>`<th>${inline(c)}</th>`).join("");
+      html += "</tr></thead><tbody>";
+      html += rows.map(r=>"<tr>"+r.map(c=>`<td>${inline(c)}</td>`).join("")+"</tr>").join("");
+      html += "</tbody></table>";
+      out.push(html);
+      continue;
+    }
+
+    // Blank line
+    if (/^\s*$/.test(line)){ i++; continue; }
+
+    // Paragraph: consume until blank line, hr, heading, list, table, quote, fence.
+    const buf = [];
+    while (i < lines.length &&
+           lines[i].trim() !== "" &&
+           !/^(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s?|```|(?:---|\*\*\*|___)\s*$)/.test(lines[i]) &&
+           !(i+1 < lines.length && /\|/.test(lines[i]) && /^\s*\|?\s*:?-{2,}/.test(lines[i+1]))){
+      buf.push(lines[i]); i++;
+    }
+    out.push(`<p>${inline(buf.join(" "))}</p>`);
+  }
+  return out.join("\n");
 }
 
-document.querySelectorAll(".save-key").forEach(btn => {
-  btn.addEventListener("click", async () => {
-    const p = btn.dataset.p;
-    const key = $(`input-${p}`).value.trim();
-    if (!key) { setSettingsStatus("Digite uma chave antes de salvar.", "err"); return; }
-    setSettingsStatus("Salvando…", "busy");
-    try {
-      const res = await fetch("/settings/keys", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ provider: p, key }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Falha ao salvar");
-      $(`input-${p}`).value = "";
-      $(`input-${p}`).type = "password";
-      setSettingsStatus(`Chave ${p} salva.`, "ok");
-      refreshKeyStatus();
-    } catch (e) {
-      setSettingsStatus("Erro: " + e.message, "err");
-    }
-  });
-});
 
-document.querySelectorAll(".del-key").forEach(btn => {
-  btn.addEventListener("click", async () => {
-    const p = btn.dataset.p;
-    if (!confirm(`Remover a chave ${p}?`)) return;
-    setSettingsStatus("Removendo…", "busy");
-    try {
-      const res = await fetch(`/settings/keys/${p}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Falha");
-      setSettingsStatus(`Chave ${p} removida.`, "ok");
-      refreshKeyStatus();
-    } catch (e) {
-      setSettingsStatus("Erro: " + e.message, "err");
-    }
-  });
-});
+/* ═════════════════════════════════════════════════════════════
+   Global state
+   ═════════════════════════════════════════════════════════════ */
+const state = {
+  tab: "arquivo",
+  file: null,
+  ocr: false,
+  force: false,
+  langs: {por:true, eng:true, spa:false, fra:false, ita:false, deu:false},
+  converting: false,
 
-document.querySelectorAll(".toggle-visibility").forEach(btn => {
+  videoUrl: "",
+  videoMeta: null,
+  processing: false,
+  eventSource: null,
+
+  visionAvailability: {},
+
+  result: null,
+  view: "rendered",
+};
+
+/* ═════════════════════════════════════════════════════════════
+   Tab switching
+   ═════════════════════════════════════════════════════════════ */
+$$(".tab").forEach(btn => {
   btn.addEventListener("click", () => {
-    const input = $(btn.dataset.target);
-    if (input.type === "password") { input.type = "text"; btn.textContent = "Ocultar"; }
-    else                             { input.type = "password"; btn.textContent = "Mostrar"; }
+    const t = btn.dataset.tab;
+    if (state.tab === t) return;
+    state.tab = t;
+    $$(".tab").forEach(b => b.classList.toggle("active", b === btn));
+    $$(".pane").forEach(p => p.classList.remove("active"));
+    $(`pane-${t}`).classList.add("active");
+    // Clear result when switching tabs
+    hideResult();
   });
 });
 
-function setSettingsStatus(msg, kind) {
-  const el = $("settings-status");
-  el.textContent = msg;
-  el.className = "status " + (kind || "");
-}
+/* ═════════════════════════════════════════════════════════════
+   File tab — dropzone
+   ═════════════════════════════════════════════════════════════ */
+const dz         = $("dropzone");
+const fileInput  = $("file-input");
+const dzEmpty    = $("dz-empty");
+const dzFile     = $("dz-file");
+const dzFileName = $("dz-file-name");
+const dzFileSize = $("dz-file-size");
+const btnConvert = $("btn-convert");
+const convertStatus = $("convert-status");
+const convertHint = $("convert-hint");
 
-// ---------------- Fetch health for vision availability ----------------
-fetch("/health").then(r => r.json()).then(h => {
-  visionAvailability = h.vision_providers || {};
-  updateVisionHint();
-}).catch(() => {});
-
-function updateVisionHint() {
-  const provider = $("opt-vision").value;
-  const hint = $("vision-hint");
-  if (provider === "none") {
-    hint.textContent = "Frames terão só OCR do texto visível. Escolha um provider para descrição visual completa.";
-    hint.style.color = "var(--muted)";
-    return;
-  }
-  if (visionAvailability[provider]) {
-    hint.textContent = "✓ API key detectada. Descrições visuais serão geradas.";
-    hint.style.color = "var(--ok)";
-  } else {
-    const env = provider === "anthropic" ? "ANTHROPIC_API_KEY"
-              : provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY";
-    hint.textContent = `⚠ ${env} não configurada — será pulado.`;
-    hint.style.color = "var(--warn)";
-  }
-}
-$("opt-vision").addEventListener("change", updateVisionHint);
-
-$("opt-transcript").addEventListener("change", (e) => {
-  const field = $("whisper-model-field");
-  if (e.target.value === "whisper" || e.target.value === "auto") {
-    field.classList.remove("hidden");
-  } else {
-    field.classList.add("hidden");
-  }
+dz.addEventListener("click", (e) => {
+  if (e.target.closest("#dz-swap")) return;
+  fileInput.click();
 });
-// Show whisper model by default (auto mode)
-$("whisper-model-field").classList.remove("hidden");
+$("dz-swap").addEventListener("click", (e)=>{ e.stopPropagation(); fileInput.click(); });
 
-// ================================================================
-// ARQUIVO tab
-// ================================================================
-const dz = $("dropzone");
-const fileInput = $("file");
-const filenameEl = $("filename");
-const convertBtn = $("convert");
-const statusEl = $("status");
-const useOcr = $("use_ocr");
-const forceOcr = $("force_ocr");
-const langsInput = $("langs");
-const chips = document.querySelectorAll(".chip");
-
-dz.addEventListener("click", () => fileInput.click());
-["dragenter","dragover"].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add("drag"); }));
-["dragleave","drop"].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove("drag"); }));
-dz.addEventListener("drop", ev => { if (ev.dataTransfer.files.length) setFile(ev.dataTransfer.files[0]); });
-fileInput.addEventListener("change", () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
-
-function setFile(f) {
-  currentFile = f;
-  filenameEl.textContent = `${f.name} · ${(f.size/1024/1024).toFixed(2)} MB`;
-  convertBtn.disabled = false;
-  const isPdf = f.name.toLowerCase().endsWith(".pdf");
-  if (isPdf && !useOcr.checked) {
-    statusEl.textContent = "Dica: se este PDF é escaneado (sem camada de texto), marque 'Rodar OCR'.";
-    statusEl.className = "status";
-  } else {
-    statusEl.textContent = "";
-  }
-}
-
-chips.forEach(c => c.addEventListener("click", () => {
-  c.classList.toggle("on");
-  const selected = Array.from(document.querySelectorAll(".chip.on")).map(x => x.dataset.l);
-  langsInput.value = selected.join("+") || "por";
+["dragenter","dragover"].forEach(evt => dz.addEventListener(evt, e => {
+  e.preventDefault(); dz.classList.add("drag");
 }));
-
-$("reset").addEventListener("click", () => {
-  currentFile = null;
-  fileInput.value = "";
-  filenameEl.textContent = "";
-  convertBtn.disabled = true;
-  statusEl.textContent = "";
-  $("resultCard").classList.add("hidden");
+["dragleave","drop"].forEach(evt => dz.addEventListener(evt, e => {
+  e.preventDefault(); dz.classList.remove("drag");
+}));
+dz.addEventListener("drop", e => {
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) setFile(fileInput.files[0]);
 });
 
-convertBtn.addEventListener("click", async () => {
-  if (!currentFile) return;
-  convertBtn.disabled = true;
-  statusEl.textContent = useOcr.checked ? "Rodando OCR + convertendo (pode demorar)…" : "Convertendo…";
-  statusEl.className = "status busy";
-  $("resultCard").classList.add("hidden");
+function setFile(f){
+  state.file = f;
+  dzEmpty.classList.add("hidden");
+  dzFile.classList.remove("hidden");
+  dzFileName.textContent = f.name;
+  dzFileSize.textContent = `${(f.size / 1024 / 1024).toFixed(2)} MB`;
+  btnConvert.disabled = false;
+  convertHint.classList.add("hidden");
+
+  const isPdf = f.name.toLowerCase().endsWith(".pdf");
+  if (isPdf && !state.ocr){
+    convertStatus.className = "status-line warn";
+    convertStatus.textContent = "Dica: se este PDF é escaneado (sem camada de texto), ligue OCR à direita.";
+  } else {
+    convertStatus.textContent = "";
+    convertStatus.className = "status-line";
+  }
+}
+
+/* OCR toggles + langs */
+const optOcr   = $("opt-ocr");
+const optForce = $("opt-force");
+const optRowForce = $("opt-row-force");
+optOcr.addEventListener("change", () => {
+  state.ocr = optOcr.checked;
+  optRowForce.classList.toggle("disabled", !state.ocr);
+  if (!state.ocr){ optForce.checked = false; state.force = false; }
+});
+optForce.addEventListener("change", () => { state.force = optForce.checked; });
+
+$("lang-chips").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  const l = chip.dataset.l;
+  state.langs[l] = !state.langs[l];
+  chip.classList.toggle("on", state.langs[l]);
+});
+
+function langsStr(){
+  const s = Object.entries(state.langs).filter(([_,v])=>v).map(([k])=>k).join("+");
+  return s || "por";
+}
+
+btnConvert.addEventListener("click", async () => {
+  if (!state.file || state.converting) return;
+  state.converting = true;
+  btnConvert.disabled = true;
+  $("btn-convert-icon").innerHTML = '<span class="spinner"></span>';
+  $("btn-convert-label").textContent = state.ocr ? "Rodando OCR + convertendo…" : "Convertendo…";
+  convertStatus.className = "status-line busy";
+  convertStatus.textContent = "";
+  hideResult();
 
   const fd = new FormData();
-  fd.append("file", currentFile);
-  fd.append("use_ocr", useOcr.checked ? "true" : "false");
-  fd.append("force_ocr", forceOcr.checked ? "true" : "false");
-  fd.append("langs", langsInput.value.trim() || "por+eng");
+  fd.append("file", state.file);
+  fd.append("use_ocr",   state.ocr   ? "true" : "false");
+  fd.append("force_ocr", state.force ? "true" : "false");
+  fd.append("langs", langsStr());
 
   try {
-    const res = await fetch("/convert", { method: "POST", body: fd });
+    const res = await fetch("/convert", { method:"POST", body:fd });
     const data = await res.json();
-    if (!res.ok) {
-      statusEl.className = "status err";
-      statusEl.textContent = (data.error || "Falha") + (data.log ? "\n\n" + data.log : "");
-      convertBtn.disabled = false;
-      return;
-    }
-    showResult(data.markdown || "", data.filename || "output.md",
-               `${(data.chars||0).toLocaleString("pt-BR")} caracteres` +
-               (data.did_ocr ? " · OCR aplicado" : ""),
-               data.ocr_log, null);
-    statusEl.className = "status ok";
-    statusEl.textContent = "Pronto.";
-  } catch (e) {
-    statusEl.className = "status err";
-    statusEl.textContent = "Erro: " + e.message;
+    if (!res.ok) throw new Error(data.error || "Falha na conversão");
+
+    const meta = `${(data.chars || 0).toLocaleString("pt-BR")} caracteres` +
+                 (data.did_ocr ? " · OCR aplicado" : "");
+    showResult(data.markdown || "", data.filename || "output.md", meta, null);
+    convertStatus.className = "status-line ok";
+    convertStatus.textContent = "Pronto.";
+  } catch (err){
+    convertStatus.className = "status-line err";
+    convertStatus.textContent = "Erro: " + err.message;
   } finally {
-    convertBtn.disabled = false;
+    state.converting = false;
+    btnConvert.disabled = !state.file;
+    $("btn-convert-icon").innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+    $("btn-convert-label").textContent = "Converter para Markdown";
   }
 });
 
-// ================================================================
-// VÍDEO tab
-// ================================================================
-let currentMeta = null;
-let currentEventSource = null;
+/* ═════════════════════════════════════════════════════════════
+   Video tab
+   ═════════════════════════════════════════════════════════════ */
+const btnPreview   = $("btn-preview");
+const previewArea  = $("video-preview-area");
+const previewStatus = $("preview-status");
+const videoOptsCard = $("video-opts-card");
+const optTranscript = $("opt-transcript");
+const optWhisperWrap = $("whisper-model-wrap");
+const optVision = $("opt-vision");
+const visionHint = $("vision-hint");
+const progressBlock = $("progress-block");
+const progressFill = $("progress-fill");
+const progressText = $("progress-text");
+const btnProcess = $("btn-process");
+const videoStatus = $("video-status");
 
-$("video-reset").addEventListener("click", () => {
-  $("video-url").value = "";
-  $("preview-area").innerHTML = "";
-  $("preview-status").textContent = "";
-  $("video-options-card").classList.add("hidden");
-  $("video-progress").classList.add("hidden");
-  $("video-status").textContent = "";
-  currentMeta = null;
-  if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
+optTranscript.addEventListener("change", () => {
+  const v = optTranscript.value;
+  optWhisperWrap.style.display = (v === "subs") ? "none" : "";
 });
 
-$("preview-btn").addEventListener("click", async () => {
+optVision.addEventListener("change", updateVisionHint);
+function updateVisionHint(){
+  const p = optVision.value;
+  if (p === "none"){
+    visionHint.textContent = "Frames recebem só OCR do texto visível. Configure uma chave em ⚙ Configurações para descrição visual completa.";
+    visionHint.style.color = "var(--muted)";
+    return;
+  }
+  if (state.visionAvailability[p]){
+    visionHint.innerHTML = "✓ Chave detectada. Descrições visuais serão geradas.";
+    visionHint.style.color = "var(--success)";
+  } else {
+    const env = p === "anthropic" ? "ANTHROPIC_API_KEY"
+              : p === "openai"    ? "OPENAI_API_KEY" : "GEMINI_API_KEY";
+    visionHint.innerHTML = `⚠ Sem chave configurada (${env}). Será pulado — abra ⚙ Configurações.`;
+    visionHint.style.color = "var(--warn-2)";
+  }
+}
+
+btnPreview.addEventListener("click", async () => {
   const url = $("video-url").value.trim();
   if (!url) return;
-  $("preview-status").textContent = "Buscando metadata…";
-  $("preview-status").className = "status busy";
-  $("preview-area").innerHTML = "";
-  $("video-options-card").classList.add("hidden");
+  previewStatus.className = "status-line busy";
+  previewStatus.textContent = "Buscando metadata…";
+  previewArea.innerHTML = "";
+  videoOptsCard.classList.add("hidden");
+  hideResult();
 
   try {
     const res = await fetch(`/video/preview?url=${encodeURIComponent(url)}`);
     const meta = await res.json();
     if (!res.ok) throw new Error(meta.error || "Falha");
-    currentMeta = meta;
-    renderPreview(meta);
-    $("video-options-card").classList.remove("hidden");
-    $("preview-status").textContent = "";
-  } catch (e) {
-    $("preview-status").textContent = "Erro: " + e.message;
-    $("preview-status").className = "status err";
+    state.videoMeta = meta;
+    renderVideoPreview(meta);
+    videoOptsCard.classList.remove("hidden");
+    previewStatus.textContent = "";
+  } catch (err){
+    previewStatus.className = "status-line err";
+    previewStatus.textContent = "Erro: " + err.message;
   }
 });
 
-function renderPreview(meta) {
-  const mins = Math.floor(meta.duration_s / 60);
-  const secs = meta.duration_s % 60;
-  const dur = `${mins}:${String(secs).padStart(2,"0")}`;
-  const subBadge = meta.has_manual_subs
-    ? '<span class="badge">Legenda manual</span>'
-    : (meta.has_auto_subs
-        ? '<span class="badge warn">Só legenda auto-gerada</span>'
-        : '<span class="badge off">Sem legenda — usará Whisper</span>');
-  const chapters = (meta.chapters||[]).length
-    ? `<span class="badge">${meta.chapters.length} chapters</span>` : "";
+function renderVideoPreview(meta){
+  const mm = Math.floor((meta.duration_s || 0) / 60);
+  const ss = (meta.duration_s || 0) % 60;
+  const dur = `${mm}:${String(ss).padStart(2, "0")}`;
+  const date = (meta.upload_date && meta.upload_date.length === 8)
+    ? `${meta.upload_date.slice(0,4)}-${meta.upload_date.slice(4,6)}-${meta.upload_date.slice(6,8)}`
+    : (meta.upload_date || "");
 
-  $("preview-area").innerHTML = `
-    <div class="yt-preview">
-      ${meta.thumbnail_url ? `<img src="${meta.thumbnail_url}" alt="">` : ""}
+  let subBadge;
+  if (meta.has_manual_subs){
+    subBadge = '<span class="badge sub-manual">Legenda manual</span>';
+  } else if (meta.has_auto_subs){
+    subBadge = '<span class="badge sub-auto">Legenda auto-gerada</span>';
+  } else {
+    subBadge = '<span class="badge sub-none">Sem legenda — usará Whisper</span>';
+  }
+  const chapters = (meta.chapters || []).length
+    ? `<span class="badge chapters">${meta.chapters.length} chapters</span>` : "";
+
+  previewArea.innerHTML = `
+    <div class="video-preview">
+      ${meta.thumbnail_url ? `<img src="${esc(meta.thumbnail_url)}" alt="">` : ""}
       <div class="info">
-        <h3>${escapeHtml(meta.title)}</h3>
-        <div class="subline">${escapeHtml(meta.uploader)} · ${dur} · ${meta.upload_date || ""}</div>
+        <h3>${esc(meta.title)}</h3>
+        <div class="subline">${esc(meta.uploader || "")} · ${dur} · ${esc(date)}</div>
         <div class="badges">${subBadge}${chapters}</div>
       </div>
     </div>
   `;
 }
 
-function escapeHtml(s) {
-  return String(s||"").replace(/[<>&"']/g, c =>
-    ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]);
-}
+btnProcess.addEventListener("click", async () => {
+  if (!state.videoMeta || state.processing) return;
 
-$("process-btn").addEventListener("click", async () => {
-  if (!currentMeta) return;
   const payload = {
-    url: currentMeta.url,
-    output_video: $("opt-video").checked,
-    output_audio: $("opt-audio").checked,
-    transcript_mode: $("opt-transcript").value,
-    whisper_model: $("opt-whisper-model").value,
-    vision_provider: $("opt-vision").value === "none" ? null : $("opt-vision").value,
+    url:              state.videoMeta.url,
+    output_video:     $("opt-dl-video").checked,
+    output_audio:     $("opt-dl-audio").checked,
+    transcript_mode:  optTranscript.value,
+    whisper_model:    $("opt-whisper-model").value,
+    vision_provider:  optVision.value === "none" ? null : optVision.value,
   };
 
-  $("process-btn").disabled = true;
-  $("video-status").textContent = "";
-  $("video-progress").classList.remove("hidden");
-  $("progress-fill").style.width = "0%";
-  $("progress-text").textContent = "Enviando job…";
-  $("resultCard").classList.add("hidden");
+  state.processing = true;
+  btnProcess.disabled = true;
+  $("btn-process-icon").innerHTML = '<span class="spinner"></span>';
+  $("btn-process-label").textContent = "Processando…";
+  videoStatus.textContent = "";
+  progressBlock.classList.remove("hidden");
+  progressFill.style.width = "0%";
+  progressText.textContent = "Enviando job…";
+  hideResult();
 
   try {
     const res = await fetch("/video/process", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(payload),
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Falha ao submeter job");
     subscribeToJob(data.job_id);
-  } catch (e) {
-    $("video-status").textContent = "Erro: " + e.message;
-    $("video-status").className = "status err";
-    $("process-btn").disabled = false;
-    $("video-progress").classList.add("hidden");
+  } catch (err){
+    videoStatus.className = "status-line err";
+    videoStatus.textContent = "Erro: " + err.message;
+    resetProcessButton();
   }
 });
 
-function subscribeToJob(jobId) {
-  if (currentEventSource) currentEventSource.close();
+function subscribeToJob(jobId){
+  if (state.eventSource) state.eventSource.close();
   const es = new EventSource(`/video/status/${jobId}`);
-  currentEventSource = es;
+  state.eventSource = es;
+
   es.onmessage = async (ev) => {
     let data;
     try { data = JSON.parse(ev.data); } catch { return; }
-    if (data.pct != null) $("progress-fill").style.width = `${data.pct}%`;
-    if (data.message) $("progress-text").textContent = `[${data.stage||""}] ${data.message}`;
-    if (data.stage === "done") {
+    if (data.pct != null) progressFill.style.width = `${data.pct}%`;
+    if (data.message) progressText.textContent = `[${data.stage || ""}] ${data.message}`;
+
+    if (data.stage === "done"){
       es.close();
-      currentEventSource = null;
+      state.eventSource = null;
       const r = await fetch(`/video/result/${jobId}`).then(x => x.json());
-      const artifactList = Object.entries(r.artifacts || {}).map(([n, u]) =>
-        `<a href="${u}" style="color:var(--accent); margin-right:12px;">📎 ${n}</a>`).join("");
-      showResult(
-        r.markdown || "",
-        r.filename || "video.md",
-        `${(r.chars||0).toLocaleString("pt-BR")} caracteres · fonte: ${r.transcript_source||""}${r.vision_provider?" · vision: "+r.vision_provider:""}`,
-        null,
-        artifactList,
-      );
-      $("process-btn").disabled = false;
-      $("video-status").className = "status ok";
-      $("video-status").textContent = "Pronto.";
+      const meta = `${(r.chars || 0).toLocaleString("pt-BR")} caracteres · fonte: ${r.transcript_source || ""}` +
+                   (r.vision_provider ? ` · vision: ${r.vision_provider}` : "");
+      const artifacts = r.artifacts || {};
+      showResult(r.markdown || "", r.filename || "video.md", meta, artifacts);
+
+      videoStatus.className = "status-line ok";
+      videoStatus.textContent = "Pronto.";
+      resetProcessButton();
     }
-    if (data.stage === "failed") {
+    if (data.stage === "failed"){
       es.close();
-      currentEventSource = null;
-      $("video-status").className = "status err";
-      $("video-status").textContent = "Falhou: " + (data.error || data.message || "erro desconhecido");
-      $("process-btn").disabled = false;
+      state.eventSource = null;
+      videoStatus.className = "status-line err";
+      videoStatus.textContent = "Falhou: " + (data.error || data.message || "erro desconhecido");
+      resetProcessButton();
     }
   };
-  es.onerror = () => {
-    // Silent — Flask dev server drops SSE at times. UI recovers on next event.
-  };
+  es.onerror = () => { /* Flask dev server flakes on SSE occasionally; UI recovers on next event */ };
 }
 
-// ================================================================
-// Result card (shared)
-// ================================================================
-function showResult(md, filename, meta, log, artifactHtml) {
-  currentMd = md;
-  currentName = filename;
-  $("output").textContent = md;
-  $("meta").textContent = meta || "";
-  if (artifactHtml) {
-    $("artifacts-list").innerHTML = artifactHtml;
-    $("artifacts-list").classList.remove("hidden");
-  } else {
-    $("artifacts-list").classList.add("hidden");
-  }
-  if (log) {
-    $("log").textContent = log;
-    $("logDetails").classList.remove("hidden");
-  } else {
-    $("logDetails").classList.add("hidden");
-  }
-  $("resultCard").classList.remove("hidden");
+function resetProcessButton(){
+  state.processing = false;
+  btnProcess.disabled = false;
+  $("btn-process-icon").innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+  $("btn-process-label").textContent = "Processar vídeo";
 }
 
-$("download").addEventListener("click", () => {
-  const blob = new Blob([currentMd], { type: "text/markdown;charset=utf-8" });
+/* ═════════════════════════════════════════════════════════════
+   Result card
+   ═════════════════════════════════════════════════════════════ */
+const resultCard = $("result-card");
+const resultMeta = $("result-meta");
+const resultRendered = $("result-rendered");
+const resultRaw = $("result-raw");
+const artifactList = $("artifact-list");
+
+function showResult(md, filename, meta, artifacts){
+  state.result = { md, filename };
+  state.view = "rendered";
+  resultMeta.textContent = meta || "";
+  resultRendered.innerHTML = renderMarkdown(md);
+  resultRaw.textContent = md;
+  resultRendered.classList.remove("hidden");
+  resultRaw.classList.add("hidden");
+  $$(".view-toggle button").forEach(b => b.classList.toggle("active", b.dataset.view === "rendered"));
+
+  if (artifacts && Object.keys(artifacts).length){
+    artifactList.innerHTML = Object.entries(artifacts).map(([n,u]) =>
+      `<a href="${esc(u)}" target="_blank" rel="noopener">📎 ${esc(n)}</a>`
+    ).join("");
+    artifactList.classList.remove("hidden");
+  } else {
+    artifactList.classList.add("hidden");
+  }
+
+  resultCard.classList.remove("hidden");
+  resultCard.scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+function hideResult(){
+  resultCard.classList.add("hidden");
+  state.result = null;
+}
+
+$$(".view-toggle button").forEach(b => {
+  b.addEventListener("click", () => {
+    state.view = b.dataset.view;
+    $$(".view-toggle button").forEach(x => x.classList.toggle("active", x === b));
+    if (state.view === "rendered"){
+      resultRendered.classList.remove("hidden");
+      resultRaw.classList.add("hidden");
+    } else {
+      resultRendered.classList.add("hidden");
+      resultRaw.classList.remove("hidden");
+    }
+  });
+});
+
+$("btn-copy").addEventListener("click", async () => {
+  if (!state.result) return;
+  try {
+    await navigator.clipboard.writeText(state.result.md);
+  } catch {}
+  const btn = $("btn-copy");
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span style="color:var(--success);">✓ Copiado!</span>';
+  setTimeout(() => btn.innerHTML = orig, 1300);
+});
+
+$("btn-download").addEventListener("click", () => {
+  if (!state.result) return;
+  const blob = new Blob([state.result.md], { type:"text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = currentName;
+  a.href = url; a.download = state.result.filename;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 });
 
-$("copy").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(currentMd);
-  const orig = $("copy").textContent;
-  $("copy").textContent = "Copiado!";
-  setTimeout(() => $("copy").textContent = orig, 1200);
+/* ═════════════════════════════════════════════════════════════
+   Settings modal
+   ═════════════════════════════════════════════════════════════ */
+const modal = $("settings-modal");
+$("open-settings").addEventListener("click", () => { modal.classList.add("open"); refreshKeyStatus(); });
+$("close-settings").addEventListener("click", () => modal.classList.remove("open"));
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("open"); });
+
+async function refreshKeyStatus(){
+  try {
+    const s = await fetch("/settings/keys").then(r => r.json());
+    for (const p of ["anthropic","openai","gemini"]){
+      const el = $(`st-${p}`);
+      const info = s[p] || {};
+      if (info.from_launch_env){
+        el.className = "provider-status env";
+        el.innerHTML = `<span class="dot"></span><span>via env var · ${esc(info.masked || "")}</span>`;
+      } else if (info.configured){
+        el.className = "provider-status ok";
+        el.innerHTML = `<span class="dot"></span><span>salvo · ${esc(info.masked || "")}</span>`;
+      } else {
+        el.className = "provider-status";
+        el.innerHTML = `<span class="dot"></span><span>não configurado</span>`;
+      }
+    }
+    state.visionAvailability = {
+      anthropic: !!s.anthropic?.configured,
+      openai:    !!s.openai?.configured,
+      gemini:    !!s.gemini?.configured,
+    };
+    updateVisionHint();
+  } catch {}
+}
+
+function setSettingsStatus(msg, kind){
+  const el = $("settings-status");
+  el.textContent = msg || "";
+  el.className = "status-line" + (kind ? " " + kind : "");
+}
+
+$$(".provider [data-save]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const p = btn.dataset.save;
+    const key = $(`in-${p}`).value.trim();
+    if (!key){ setSettingsStatus("Digite uma chave antes de salvar.", "err"); return; }
+    setSettingsStatus("Salvando…", "busy");
+    try {
+      const res = await fetch("/settings/keys", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ provider:p, key }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao salvar");
+      $(`in-${p}`).value = "";
+      setSettingsStatus(`Chave de ${p} salva.`, "ok");
+      refreshKeyStatus();
+    } catch (err){
+      setSettingsStatus("Erro: " + err.message, "err");
+    }
+  });
 });
+
+$$(".provider [data-del]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const p = btn.dataset.del;
+    if (!confirm(`Remover a chave de ${p}?`)) return;
+    setSettingsStatus("Removendo…", "busy");
+    try {
+      const res = await fetch(`/settings/keys/${p}`, { method:"DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha");
+      setSettingsStatus(`Chave de ${p} removida.`, "ok");
+      refreshKeyStatus();
+    } catch (err){
+      setSettingsStatus("Erro: " + err.message, "err");
+    }
+  });
+});
+
+/* ═════════════════════════════════════════════════════════════
+   Bootstrap
+   ═════════════════════════════════════════════════════════════ */
+fetch("/health").then(r => r.json()).then(h => {
+  state.visionAvailability = h.vision_providers || {};
+  updateVisionHint();
+}).catch(()=>{});
 </script>
 </body>
 </html>
