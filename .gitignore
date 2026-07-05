@@ -18,3 +18,6 @@ node_modules/
 .vscode/
 platform/*/build/
 docs/screenshot-*.png
+
+# Design handoff artifacts (internal reference only, not for redistribution)
+design_handoff_*/
