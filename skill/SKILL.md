@@ -27,6 +27,20 @@ Se o Claude tem acesso ao **MCP server `doctomarkdown`** (ferramentas `convert_f
 
 Se as tools MCP não estiverem disponíveis (checar o tool palette antes), caia pra HTTP na porta 5555 (se a UI estiver rodando) ou pra subprocess `markitdown`/`ocrmypdf` diretamente.
 
+### Economia de tokens (importante!)
+
+`convert_file` e `process_video` **salvam automaticamente o `.md` em disco**:
+- `convert_file`: salva `<arquivo_original>.md` no mesmo diretório do input
+- `process_video`: salva em `~/Documents/DocToMarkdown/<video_id>.md` (ou `output_dir` que você especificar)
+
+Por padrão, elas retornam apenas metadata (`saved_to`, `chars`, `preview` com 500 chars). **NÃO retornam o Markdown completo** — isso economiza milhares de tokens de contexto quando o output é grande.
+
+Só passe `return_content=True` quando precisar processar o Markdown na resposta agora (resumir, buscar termo específico, etc.). Se só quer confirmar sucesso ou o caminho, o default já basta — e depois você pode ler o arquivo com a tool Read se necessário.
+
+**Regra prática:**
+- Confirmar conversão / listar caminho → `return_content=False` (default)
+- Resumir / analisar imediatamente → `return_content=True`, mas prefira Read do arquivo salvo se >5000 chars
+
 ## Passo a passo obrigatório (fallback sem MCP)
 
 ### 1. Verificar dependências

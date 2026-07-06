@@ -73,8 +73,8 @@ def convert_file(
         bool,
         Field(
             description=(
-                "Force OCR when the input is a PDF. Auto-detects scanned PDFs "
-                "and applies ocrmypdf before markitdown. Ignored for non-PDF."
+                "Run OCR when the input is a PDF. Applies ocrmypdf before "
+                "markitdown. Ignored for non-PDF."
             )
         ),
     ] = False,
@@ -96,41 +96,90 @@ def convert_file(
             )
         ),
     ] = "por+eng",
-) -> str:
-    """Convert any supported file to Markdown.
+    save_alongside: Annotated[
+        bool,
+        Field(
+            description=(
+                "Write the Markdown to '<original_stem>.md' in the same directory "
+                "as the input. Default True."
+            )
+        ),
+    ] = True,
+    return_content: Annotated[
+        bool,
+        Field(
+            description=(
+                "Return the full Markdown text in the response (costs conversation "
+                "tokens). Set False to get only saved_to + a short preview — much "
+                "cheaper for large outputs; the caller can read the .md file when "
+                "and if needed."
+            )
+        ),
+    ] = False,
+) -> dict:
+    """Convert any supported file to Markdown, saving it next to the source by default.
 
-    Supports PDF (with automatic OCR for scanned PDFs), DOCX, PPTX, XLSX,
-    images, HTML, EPUB, audio (via transcription), CSV/JSON/XML, notebooks,
-    and archives. Returns clean Markdown suitable for LLM consumption.
+    Supports PDF (with optional OCR for scans), DOCX, PPTX, XLSX, images, HTML,
+    EPUB, audio (via transcription), CSV/JSON/XML, notebooks, ZIP archives.
+
+    Returns { saved_to, chars, did_ocr, preview } and — when return_content=True —
+    a `markdown` field with the full text. Prefer return_content=False for big
+    documents to keep the conversation context small; the saved .md file is
+    always available on disk.
     """
     if MARKITDOWN is None:
-        return "ERROR: markitdown is not installed on PATH."
+        return {"error": "markitdown is not installed on PATH."}
 
     src = Path(path).expanduser().resolve()
     if not src.exists() or not src.is_file():
-        return f"ERROR: file not found: {src}"
+        return {"error": f"file not found: {src}"}
 
+    did_ocr = False
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         target = src
 
         if use_ocr and src.suffix.lower() == ".pdf":
             if OCRMYPDF is None:
-                return "ERROR: OCR requested but ocrmypdf is not installed."
+                return {"error": "OCR requested but ocrmypdf is not installed."}
             ocred = tmpdir / f"ocr_{src.name}"
             cmd = [OCRMYPDF, "-l", ocr_langs, "--optimize", "1"]
             cmd.append("--force-ocr" if force_ocr else "--skip-text")
             cmd += [str(src), str(ocred)]
             proc = _run(cmd)
             if proc.returncode != 0:
-                return f"ERROR (ocrmypdf): {proc.stderr or proc.stdout}"
+                return {"error": f"ocrmypdf failed: {proc.stderr or proc.stdout}"}
             target = ocred
+            did_ocr = True
 
         proc = _run([MARKITDOWN, str(target)])
         if proc.returncode != 0:
-            return f"ERROR (markitdown): {proc.stderr or proc.stdout}"
+            return {"error": f"markitdown failed: {proc.stderr or proc.stdout}"}
 
-    return proc.stdout
+    md = proc.stdout
+    saved_to: str | None = None
+    if save_alongside:
+        try:
+            out_path = src.with_suffix(".md")
+            # Avoid overwriting a source file that happens to be .md itself
+            if out_path.resolve() == src.resolve():
+                out_path = src.parent / (src.stem + ".converted.md")
+            out_path.write_text(md, encoding="utf-8")
+            saved_to = str(out_path)
+        except OSError as e:
+            saved_to = None
+            # Not fatal — still return the markdown to the caller.
+            md = f"[warning: could not save alongside source: {e}]\n\n{md}"
+
+    result: dict = {
+        "saved_to": saved_to,
+        "chars": len(md),
+        "did_ocr": did_ocr,
+        "preview": md[:500] + ("…" if len(md) > 500 else ""),
+    }
+    if return_content:
+        result["markdown"] = md
+    return result
 
 
 @mcp.tool()
@@ -165,9 +214,33 @@ def preview_video(
     return meta.to_dict()
 
 
+def _default_video_output_dir() -> Path:
+    """Sensible default: ~/Documents/DocToMarkdown/ (created on first use)."""
+    p = Path.home() / "Documents" / "DocToMarkdown"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 @mcp.tool()
 def process_video(
     url: Annotated[str, Field(description="Video URL.")],
+    output_dir: Annotated[
+        str,
+        Field(
+            description=(
+                "Directory to save the .md (and MP4/MP3 if requested). "
+                "Default: ~/Documents/DocToMarkdown/. Created if missing."
+            )
+        ),
+    ] = "",
+    save_video: Annotated[
+        bool,
+        Field(description="Also save the source MP4 in output_dir."),
+    ] = False,
+    save_audio: Annotated[
+        bool,
+        Field(description="Also save the extracted MP3 in output_dir."),
+    ] = False,
     transcript_mode: Annotated[
         str,
         Field(
@@ -191,21 +264,39 @@ def process_video(
             )
         ),
     ] = "none",
-) -> str:
-    """Process a video URL end-to-end and return the full-context Markdown.
+    return_content: Annotated[
+        bool,
+        Field(
+            description=(
+                "Return the full Markdown text in the response (costs conversation "
+                "tokens). Set False (default) to get only saved_to + a short "
+                "preview — the saved .md file has the full content."
+            )
+        ),
+    ] = False,
+) -> dict:
+    """Process a video URL end-to-end and save the full-context Markdown.
 
-    Downloads the audio (and video if needed for frames), transcribes it,
-    extracts key frames on scene cuts, OCRs each frame, optionally describes
-    each scene with a vision LLM, and merges everything into a timeline
-    Markdown document. Long-running (30s-15min depending on length + Whisper).
+    Downloads the audio (and video for frames), transcribes it, extracts key
+    frames on scene cuts, OCRs each frame, optionally describes each scene
+    with a vision LLM, and merges everything into a timeline Markdown file
+    saved in output_dir. Long-running (30s–15min depending on length +
+    Whisper model).
+
+    Returns { saved_to, chars, transcript_source, vision_provider, artifacts,
+    preview } — plus `markdown` when return_content=True.
     """
     try:
         meta = vdl.probe(url)
     except Exception as e:  # noqa: BLE001
-        return f"ERROR probing URL: {e}"
+        return {"error": f"could not probe URL: {e}"}
 
     if meta.duration_s > 4 * 3600:
-        return f"ERROR: video is {meta.duration_s // 60}min — exceeds 4h limit."
+        return {"error": f"video is {meta.duration_s // 60}min — exceeds 4h limit."}
+
+    out_dir = Path(output_dir).expanduser() if output_dir else _default_video_output_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    slug = (meta.id or "video") + (f"__{meta.uploader.replace(' ', '_')}" if meta.uploader else "")
 
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
@@ -213,13 +304,12 @@ def process_video(
         try:
             audio = vdl.download_audio(url, work)
         except Exception as e:  # noqa: BLE001
-            return f"ERROR downloading audio: {e}"
+            return {"error": f"downloading audio failed: {e}"}
 
-        # We need video for frame extraction — always download.
         try:
             video_path = vdl.download_video(url, work)
         except Exception as e:  # noqa: BLE001
-            return f"ERROR downloading video: {e}"
+            return {"error": f"downloading video failed: {e}"}
 
         # Transcript
         transcript: list[vtrans.TranscriptSegment] = []
@@ -234,7 +324,7 @@ def process_video(
                 "legenda manual" if is_manual else "legenda auto-gerada"
             )
         elif transcript_mode == "subs":
-            return "ERROR: transcript_mode='subs' but no subtitles available."
+            return {"error": "transcript_mode='subs' but no subtitles available."}
         else:
             try:
                 transcript = vtrans.transcribe_whisper(
@@ -242,7 +332,7 @@ def process_video(
                 )
                 transcript_source = f"Whisper local ({whisper_model})"
             except Exception as e:  # noqa: BLE001
-                return f"ERROR transcribing with Whisper: {e}"
+                return {"error": f"Whisper transcription failed: {e}"}
 
         # Frames + OCR
         extracted = vframes.extract_scenes(video_path, work / "frames")
@@ -253,10 +343,12 @@ def process_video(
         if do_vision:
             available = vvision.available_providers()
             if not available.get(vision_provider):
-                return (
-                    f"ERROR: vision_provider='{vision_provider}' but no API key "
-                    f"configured. Use set_api_key first."
-                )
+                return {
+                    "error": (
+                        f"vision_provider='{vision_provider}' but no API key "
+                        f"configured. Use set_api_key first."
+                    )
+                }
             descs = vvision.describe_frames_parallel(
                 [f.image_path for f in extracted],
                 provider=vision_provider,
@@ -266,7 +358,7 @@ def process_video(
                 if d:
                     f.vision_description = d
 
-        return vmerger.build_full(
+        md = vmerger.build_full(
             meta=meta,
             transcript=transcript,
             frames=extracted,
@@ -274,6 +366,31 @@ def process_video(
             vision_provider=vision_provider if do_vision else None,
             artifacts=None,
         )
+
+        artifacts_saved: dict[str, str] = {}
+        if save_video:
+            dest = out_dir / f"{slug}.mp4"
+            shutil.copy2(video_path, dest)
+            artifacts_saved["video"] = str(dest)
+        if save_audio:
+            dest = out_dir / f"{slug}.mp3"
+            shutil.copy2(audio, dest)
+            artifacts_saved["audio"] = str(dest)
+
+    md_path = out_dir / f"{slug}.md"
+    md_path.write_text(md, encoding="utf-8")
+
+    result: dict = {
+        "saved_to": str(md_path),
+        "chars": len(md),
+        "transcript_source": transcript_source,
+        "vision_provider": vision_provider if do_vision else None,
+        "artifacts": artifacts_saved or None,
+        "preview": md[:500] + ("…" if len(md) > 500 else ""),
+    }
+    if return_content:
+        result["markdown"] = md
+    return result
 
 
 # ---------------------------------------------------------------------------
