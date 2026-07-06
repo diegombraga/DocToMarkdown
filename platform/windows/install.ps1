@@ -213,33 +213,41 @@ Ok "Ambiente Python pronto"
 # The UB-Mannheim silent install only ships English. We ship a private
 # tessdata dir under %LOCALAPPDATA% and point TESSDATA_PREFIX at it so
 # no admin rights are needed.
+#
+# In CI mode we still create the dir + set the env var (so the /health
+# probe passes), but skip the network download of por.traineddata and
+# the copy from the system tessdata (which can be slow on runners).
 # -----------------------------------------------------------------------------
 Log "Preparando tessdata em $TessData"
 New-Item -ItemType Directory -Force -Path $TessData | Out-Null
 
-# Seed from the system Tesseract install (has osd, eng, configs, tessconfigs)
-$sysTess = "C:\Program Files\Tesseract-OCR\tessdata"
-if (Test-Path $sysTess) {
-    foreach ($f in Get-ChildItem $sysTess -Force) {
-        $dest = Join-Path $TessData $f.Name
-        if (-not (Test-Path $dest)) {
-            Copy-Item -Recurse -Force -LiteralPath $f.FullName -Destination $dest
+if (-not $CiMode) {
+    # Seed from the system Tesseract install (has osd, eng, configs, tessconfigs)
+    $sysTess = "C:\Program Files\Tesseract-OCR\tessdata"
+    if (Test-Path $sysTess) {
+        foreach ($f in Get-ChildItem $sysTess -Force) {
+            $dest = Join-Path $TessData $f.Name
+            if (-not (Test-Path $dest)) {
+                Copy-Item -Recurse -Force -LiteralPath $f.FullName -Destination $dest
+            }
         }
     }
-}
 
-# por.traineddata -- fetch if missing
-$porFile = Join-Path $TessData "por.traineddata"
-if (-not (Test-Path $porFile)) {
-    Log "Baixando por.traineddata (idioma portugues)"
-    try {
-        Invoke-WebRequest -UseBasicParsing `
-            -Uri "https://github.com/tesseract-ocr/tessdata_best/raw/main/por.traineddata" `
-            -OutFile $porFile
-        Ok "por.traineddata pronto"
-    } catch {
-        Warn "Nao consegui baixar por.traineddata: $_"
+    # por.traineddata -- fetch if missing (skip in CI: unused by the probe)
+    $porFile = Join-Path $TessData "por.traineddata"
+    if (-not (Test-Path $porFile)) {
+        Log "Baixando por.traineddata (idioma portugues)"
+        try {
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 `
+                -Uri "https://github.com/tesseract-ocr/tessdata_best/raw/main/por.traineddata" `
+                -OutFile $porFile
+            Ok "por.traineddata pronto"
+        } catch {
+            Warn "Nao consegui baixar por.traineddata: $_"
+        }
     }
+} else {
+    Log "CI mode: pulando copia de tessdata do sistema e download de por.traineddata"
 }
 
 # Set TESSDATA_PREFIX for the user so any Tesseract invocation finds our dir
@@ -248,35 +256,46 @@ $env:TESSDATA_PREFIX = $TessData
 Ok "TESSDATA_PREFIX = $TessData"
 
 # -----------------------------------------------------------------------------
-# Ghostscript (needed for ocrmypdf PDF/A output)
-# No reliable winget package -- pull from the Artifex release directly.
+# Ghostscript (needed for ocrmypdf PDF/A output). No reliable winget package.
+# Skipped in CI mode: not needed for the /health probe and the Artifex NSIS
+# installer has been observed to hang on GitHub-hosted runners even with /S.
 # -----------------------------------------------------------------------------
-$gsProbe = Get-Command gswin64c -ErrorAction SilentlyContinue
-if (-not $gsProbe) {
-    Log "Instalando Ghostscript (Artifex release)"
-    try {
-        $api = Invoke-RestMethod -UseBasicParsing `
-            -Uri "https://api.github.com/repos/ArtifexSoftware/ghostpdl-downloads/releases/latest"
-        $asset = $api.assets | Where-Object { $_.name -match "^gs\d+w64\.exe$" } | Select-Object -First 1
-        if ($asset) {
-            $gsInstaller = Join-Path $env:TEMP $asset.name
-            Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $gsInstaller
-            $gsProc = Start-Process -FilePath $gsInstaller `
-                -ArgumentList "/S" -PassThru -Wait
-            if ($gsProc.ExitCode -eq 0) {
-                Ok "Ghostscript instalado"
-            } else {
-                Warn "Ghostscript installer exit=$($gsProc.ExitCode) -- OCR sem PDF/A pode falhar silenciosamente"
-            }
-            Remove-Item -Force $gsInstaller -ErrorAction SilentlyContinue
-        } else {
-            Warn "Ghostscript: nao encontrei asset no release mais recente"
-        }
-    } catch {
-        Warn "Ghostscript: instalacao falhou ($_) -- OCR pode degradar silenciosamente"
-    }
+if ($CiMode) {
+    Log "CI mode: pulando instalacao do Ghostscript"
 } else {
-    Ok "Ghostscript ja instalado"
+    $gsProbe = Get-Command gswin64c -ErrorAction SilentlyContinue
+    if (-not $gsProbe) {
+        Log "Instalando Ghostscript (Artifex release)"
+        try {
+            $api = Invoke-RestMethod -UseBasicParsing -TimeoutSec 30 `
+                -Uri "https://api.github.com/repos/ArtifexSoftware/ghostpdl-downloads/releases/latest"
+            $asset = $api.assets | Where-Object { $_.name -match "^gs\d+w64\.exe$" } | Select-Object -First 1
+            if ($asset) {
+                $gsInstaller = Join-Path $env:TEMP $asset.name
+                Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 `
+                    -Uri $asset.browser_download_url -OutFile $gsInstaller
+                $gsProc = Start-Process -FilePath $gsInstaller `
+                    -ArgumentList "/S" -PassThru
+                # Bound the wait -- if /S is ignored and a GUI shows up we do
+                # NOT want to sit forever. 5 min is way beyond a normal install.
+                if (-not $gsProc.WaitForExit(300000)) {
+                    try { $gsProc.Kill() } catch {}
+                    Warn "Ghostscript installer timed out (5min) -- pulando"
+                } elseif ($gsProc.ExitCode -eq 0) {
+                    Ok "Ghostscript instalado"
+                } else {
+                    Warn "Ghostscript installer exit=$($gsProc.ExitCode) -- OCR sem PDF/A pode falhar silenciosamente"
+                }
+                Remove-Item -Force $gsInstaller -ErrorAction SilentlyContinue
+            } else {
+                Warn "Ghostscript: nao encontrei asset no release mais recente"
+            }
+        } catch {
+            Warn "Ghostscript: instalacao falhou ($_) -- OCR pode degradar silenciosamente"
+        }
+    } else {
+        Ok "Ghostscript ja instalado"
+    }
 }
 
 # -----------------------------------------------------------------------------
