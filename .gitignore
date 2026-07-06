@@ -21,3 +21,8 @@ docs/screenshot-*.png
 
 # Design handoff artifacts (internal reference only, not for redistribution)
 design_handoff_*/
+
+# Local marketing / landing-page artifacts kept in the working tree but
+# not part of the shipped project.
+instagram/
+DocToMarkdown-site.html
