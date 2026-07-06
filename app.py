@@ -5,12 +5,18 @@ PATH: markitdown (Python package, shipped via requirements.txt), ocrmypdf,
 ffmpeg, tesseract (installed system-wide by the platform installer).
 """
 
+import json
 import os
+import queue
+import re
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import uuid
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
@@ -25,6 +31,146 @@ TESSERACT = shutil.which("tesseract")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
+
+
+# ---------------------------------------------------------------------------
+# /convert as a background job — lets the UI show real OCR-page progress
+# instead of blocking on one long request. The old synchronous /convert
+# route stays available for scripts that don't want SSE.
+# ---------------------------------------------------------------------------
+
+_CONVERT_BASE_DIR = Path(tempfile.gettempdir()) / "dtm-convert-jobs"
+_CONVERT_BASE_DIR.mkdir(parents=True, exist_ok=True)
+_CONVERT_JOBS: dict[str, dict] = {}
+_CONVERT_QUEUES: dict[str, "queue.Queue"] = {}
+_CONVERT_LOCK = threading.Lock()
+_OCR_PAGE_LINE = re.compile(r"^\s*(\d+)\s")
+
+
+def _convert_emit(job_id: str, stage: str, pct: int, message: str) -> None:
+    with _CONVERT_LOCK:
+        job = _CONVERT_JOBS.get(job_id)
+        if job is None:
+            return
+        job["stage"], job["pct"], job["message"] = stage, pct, message
+    q = _CONVERT_QUEUES.get(job_id)
+    if q:
+        q.put({"stage": stage, "pct": pct, "message": message})
+
+
+def _convert_pipeline(
+    job_id: str,
+    saved_path: Path,
+    orig_filename: str,
+    use_ocr: bool,
+    force_ocr: bool,
+    langs: str,
+) -> None:
+    try:
+        target = saved_path
+        did_ocr = False
+        ocr_log = ""
+
+        if use_ocr and saved_path.suffix.lower() == ".pdf":
+            # Best-effort page count for a nicer progress bar. Falls back to
+            # coarse "OCR em andamento" if pikepdf can't open the file.
+            total_pages = None
+            try:
+                import pikepdf
+
+                with pikepdf.open(saved_path) as pdf:
+                    total_pages = len(pdf.pages)
+            except Exception:  # noqa: BLE001
+                total_pages = None
+
+            _convert_emit(job_id, "ocr", 5, "Iniciando OCR…")
+            ocred = saved_path.parent / f"ocr_{saved_path.name}"
+            cmd = [OCRMYPDF, "-v", "1", "-l", langs, "--optimize", "1"]
+            cmd.append("--force-ocr" if force_ocr else "--skip-text")
+            cmd += [str(saved_path), str(ocred)]
+
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            log_lines: list[str] = []
+            last_page = 0
+            for line in proc.stdout:  # type: ignore[union-attr]
+                log_lines.append(line)
+                m = _OCR_PAGE_LINE.match(line)
+                if m and total_pages:
+                    page = int(m.group(1))
+                    if last_page < page <= total_pages:
+                        last_page = page
+                        pct = 5 + int(80 * page / total_pages)
+                        _convert_emit(
+                            job_id, "ocr", pct, f"OCR: página {page}/{total_pages}"
+                        )
+                elif "Postprocessing" in line:
+                    _convert_emit(job_id, "ocr", 88, "Finalizando OCR…")
+            proc.wait()
+            ocr_log = "".join(log_lines)
+            if proc.returncode != 0:
+                raise RuntimeError(f"OCR falhou: {ocr_log[-2000:]}")
+            target = ocred
+            did_ocr = True
+
+        _convert_emit(job_id, "markitdown", 92, "Convertendo para Markdown…")
+        proc = subprocess.run(
+            [MARKITDOWN, str(target)], capture_output=True, text=True
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"markitdown falhou: {proc.stderr or proc.stdout}")
+
+        md = proc.stdout
+        out_name = Path(orig_filename).stem + ".md"
+        md_path = saved_path.parent / out_name
+        md_path.write_text(md, encoding="utf-8")
+
+        with _CONVERT_LOCK:
+            job = _CONVERT_JOBS[job_id]
+            job["md_path"] = str(md_path)
+            job["finished_at"] = time.time()
+            job["result"] = {
+                "markdown": md,
+                "filename": out_name,
+                "did_ocr": did_ocr,
+                "ocr_log": ocr_log if did_ocr else None,
+                "chars": len(md),
+                "download_url": f"/convert/download/{job_id}",
+            }
+        _convert_emit(job_id, "done", 100, "Pronto.")
+    except Exception as e:  # noqa: BLE001
+        with _CONVERT_LOCK:
+            job = _CONVERT_JOBS.get(job_id)
+            if job is not None:
+                job["error"] = str(e)
+                job["finished_at"] = time.time()
+        _convert_emit(job_id, "failed", 0, str(e))
+
+
+def _convert_cleanup_loop() -> None:
+    """Delete finished convert jobs (and their temp files) older than 30 min."""
+    while True:
+        time.sleep(300)
+        cutoff = time.time() - 30 * 60
+        with _CONVERT_LOCK:
+            stale = [
+                jid
+                for jid, j in _CONVERT_JOBS.items()
+                if j.get("finished_at") and j["finished_at"] < cutoff
+            ]
+            for jid in stale:
+                _CONVERT_JOBS.pop(jid, None)
+                _CONVERT_QUEUES.pop(jid, None)
+        for jid in stale:
+            shutil.rmtree(_CONVERT_BASE_DIR / jid, ignore_errors=True)
+
+
+threading.Thread(target=_convert_cleanup_loop, daemon=True).start()
 
 
 @app.route("/")
@@ -45,6 +191,11 @@ def health():
             "ocrmypdf_path": OCRMYPDF or "",
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Synchronous /convert (legacy — kept for scripts and CI probes)
+# ---------------------------------------------------------------------------
 
 
 @app.route("/convert", methods=["POST"])
@@ -110,6 +261,130 @@ def convert():
                 "chars": len(proc.stdout),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Asynchronous /convert/* — used by the UI for real-time progress on large
+# files. Same accepted form fields as /convert; returns a job_id and streams
+# per-page OCR progress via SSE.
+# ---------------------------------------------------------------------------
+
+
+@app.route("/convert/start", methods=["POST"])
+def convert_start():
+    if not MARKITDOWN:
+        return jsonify({"error": "markitdown não está instalado no PATH"}), 500
+    if "file" not in request.files:
+        return jsonify({"error": "Nenhum arquivo enviado"}), 400
+
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "Arquivo sem nome"}), 400
+
+    use_ocr = request.form.get("use_ocr") == "true"
+    force_ocr = request.form.get("force_ocr") == "true"
+    langs = request.form.get("langs", "por+eng").strip() or "por+eng"
+
+    if use_ocr and not OCRMYPDF:
+        return (
+            jsonify({"error": "OCR pedido mas ocrmypdf não está instalado no PATH"}),
+            500,
+        )
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = _CONVERT_BASE_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    saved_path = job_dir / Path(f.filename).name
+    f.save(str(saved_path))
+
+    with _CONVERT_LOCK:
+        _CONVERT_JOBS[job_id] = {
+            "stage": "queued",
+            "pct": 0,
+            "message": "",
+            "error": None,
+            "result": None,
+            "md_path": None,
+            "finished_at": None,
+        }
+        _CONVERT_QUEUES[job_id] = queue.Queue()
+
+    threading.Thread(
+        target=_convert_pipeline,
+        args=(job_id, saved_path, f.filename, use_ocr, force_ocr, langs),
+        daemon=True,
+    ).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/convert/status/<job_id>")
+def convert_status(job_id):
+    def stream():
+        q = _CONVERT_QUEUES.get(job_id)
+        if q is None:
+            yield f"data: {json.dumps({'error': 'job desconhecido'})}\n\n"
+            return
+
+        job = _CONVERT_JOBS.get(job_id)
+        if job:
+            yield (
+                f"data: {json.dumps({'stage': job['stage'], 'pct': job['pct'], 'message': job['message']})}\n\n"
+            )
+
+        while True:
+            try:
+                event = q.get(timeout=60.0)
+            except queue.Empty:
+                yield ": heartbeat\n\n"
+                j = _CONVERT_JOBS.get(job_id)
+                if not j or j.get("finished_at") is not None:
+                    break
+                continue
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("stage") in ("done", "failed"):
+                break
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/convert/result/<job_id>")
+def convert_result(job_id):
+    job = _CONVERT_JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "job desconhecido"}), 404
+    if job.get("error"):
+        return jsonify({"error": job["error"]}), 500
+    if not job.get("result"):
+        return (
+            jsonify({"error": "job ainda em andamento", "stage": job.get("stage")}),
+            425,
+        )
+    return jsonify(job["result"])
+
+
+@app.route("/convert/download/<job_id>")
+def convert_download(job_id):
+    """Server-backed download URL — needed because some webviews (WebView2)
+    silently drop <a download> clicks pointing to a blob: URL. Serving the
+    file with Content-Disposition: attachment triggers the native save
+    dialog reliably across pywebview backends and normal browsers."""
+    job = _CONVERT_JOBS.get(job_id)
+    if not job or not job.get("md_path"):
+        return jsonify({"error": "arquivo não encontrado"}), 404
+    p = Path(job["md_path"])
+    if not p.is_file():
+        return jsonify({"error": "arquivo não encontrado"}), 404
+    return send_file(
+        str(p), as_attachment=True, download_name=p.name, mimetype="text/markdown"
+    )
 
 
 # ---------------------------------------------------------------------------

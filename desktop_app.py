@@ -16,6 +16,7 @@ Or via the .app / .lnk / .desktop launcher installed by platform/*/install.
 
 from __future__ import annotations
 
+import io
 import os
 import socket
 import sys
@@ -23,6 +24,16 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+
+# When launched via pythonw.exe (no console attached, e.g. the Start Menu
+# shortcut on Windows), sys.stdout/stderr are None. Flask/Werkzeug print to
+# them on startup, which raises AttributeError and kills the server thread
+# silently — the user sees no window and no error dialog. Give the streams
+# a sink so any startup print stays alive.
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 
 # Make sure the repo dir is on sys.path (matters when the launcher script
 # invokes us from anywhere).
@@ -86,6 +97,11 @@ def main() -> int:
         (Path(tempfile.gettempdir()) / "doctomarkdown.port").write_text(str(port))
     except OSError:
         pass
+
+    # Off by default in pywebview — without this, clicking "Baixar .md" (or
+    # any <a download>/attachment response) is silently swallowed by WebView2
+    # on Windows and other webviews that treat downloads as opt-in.
+    webview.settings["ALLOW_DOWNLOADS"] = True
 
     webview.create_window(
         title="DocToMarkdown",

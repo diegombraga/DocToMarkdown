@@ -4,12 +4,16 @@ Exposes the file-conversion and video-processing pipelines as MCP tools that
 any Claude product (Claude Desktop, Claude Code, claude.ai with connectors)
 can invoke natively via tool-use — no HTTP calls, no shell wrangling.
 
-Run standalone:
-    python -m mcp_server        (if imported as package; not applicable here)
-    python mcp_server.py        (direct)
+Long-running tools (convert_file, process_video) are async and report
+progress via the MCP Context so clients can display a live progress bar
+instead of a spinning cursor for minutes. Blocking calls (subprocess,
+Whisper, yt-dlp, vision APIs) are dispatched via asyncio.to_thread so the
+progress notifications actually reach the client.
 
-Or register with Claude Desktop by adding to ~/Library/Application Support/
-Claude/claude_desktop_config.json:
+Run standalone:
+    python mcp_server.py
+
+Or register with Claude Desktop by adding to the config file:
 
     {
       "mcpServers": {
@@ -23,6 +27,7 @@ Claude/claude_desktop_config.json:
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 import sys
@@ -30,7 +35,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field
 
 # Ensure the video/ subpackage (with env config) is loadable regardless of cwd
@@ -67,7 +72,8 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 
 @mcp.tool()
-def convert_file(
+async def convert_file(
+    ctx: Context,
     path: Annotated[str, Field(description="Absolute path to the input file.")],
     use_ocr: Annotated[
         bool,
@@ -127,6 +133,8 @@ def convert_file(
     documents to keep the conversation context small; the saved .md file is
     always available on disk.
     """
+    await ctx.report_progress(0, 100, "Iniciando conversão…")
+
     if MARKITDOWN is None:
         return {"error": "markitdown is not installed on PATH."}
 
@@ -142,23 +150,27 @@ def convert_file(
         if use_ocr and src.suffix.lower() == ".pdf":
             if OCRMYPDF is None:
                 return {"error": "OCR requested but ocrmypdf is not installed."}
+            await ctx.report_progress(10, 100, "Executando OCR…")
             ocred = tmpdir / f"ocr_{src.name}"
             cmd = [OCRMYPDF, "-l", ocr_langs, "--optimize", "1"]
             cmd.append("--force-ocr" if force_ocr else "--skip-text")
             cmd += [str(src), str(ocred)]
-            proc = _run(cmd)
+            proc = await asyncio.to_thread(_run, cmd)
             if proc.returncode != 0:
                 return {"error": f"ocrmypdf failed: {proc.stderr or proc.stdout}"}
             target = ocred
             did_ocr = True
+            await ctx.report_progress(70, 100, "OCR concluído")
 
-        proc = _run([MARKITDOWN, str(target)])
+        await ctx.report_progress(80, 100, "Convertendo para Markdown…")
+        proc = await asyncio.to_thread(_run, [MARKITDOWN, str(target)])
         if proc.returncode != 0:
             return {"error": f"markitdown failed: {proc.stderr or proc.stdout}"}
 
     md = proc.stdout
     saved_to: str | None = None
     if save_alongside:
+        await ctx.report_progress(95, 100, "Salvando arquivo…")
         try:
             out_path = src.with_suffix(".md")
             # Avoid overwriting a source file that happens to be .md itself
@@ -179,6 +191,7 @@ def convert_file(
     }
     if return_content:
         result["markdown"] = md
+    await ctx.report_progress(100, 100, "Concluído")
     return result
 
 
@@ -222,7 +235,8 @@ def _default_video_output_dir() -> Path:
 
 
 @mcp.tool()
-def process_video(
+async def process_video(
+    ctx: Context,
     url: Annotated[str, Field(description="Video URL.")],
     output_dir: Annotated[
         str,
@@ -286,8 +300,9 @@ def process_video(
     Returns { saved_to, chars, transcript_source, vision_provider, artifacts,
     preview } — plus `markdown` when return_content=True.
     """
+    await ctx.report_progress(0, 100, "Consultando informações do vídeo…")
     try:
-        meta = vdl.probe(url)
+        meta = await asyncio.to_thread(vdl.probe, url)
     except Exception as e:  # noqa: BLE001
         return {"error": f"could not probe URL: {e}"}
 
@@ -301,22 +316,25 @@ def process_video(
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
 
+        await ctx.report_progress(10, 100, "Baixando áudio…")
         try:
-            audio = vdl.download_audio(url, work)
+            audio = await asyncio.to_thread(vdl.download_audio, url, work)
         except Exception as e:  # noqa: BLE001
             return {"error": f"downloading audio failed: {e}"}
 
+        await ctx.report_progress(20, 100, "Baixando vídeo…")
         try:
-            video_path = vdl.download_video(url, work)
+            video_path = await asyncio.to_thread(vdl.download_video, url, work)
         except Exception as e:  # noqa: BLE001
             return {"error": f"downloading video failed: {e}"}
 
         # Transcript
+        await ctx.report_progress(35, 100, "Obtendo transcrição…")
         transcript: list[vtrans.TranscriptSegment] = []
         transcript_source = "whisper (local)"
         srt_path, is_manual = (None, False)
         if transcript_mode in ("auto", "subs"):
-            srt_path, is_manual = vdl.fetch_subtitles(url, work)
+            srt_path, is_manual = await asyncio.to_thread(vdl.fetch_subtitles, url, work)
 
         if srt_path is not None and transcript_mode != "whisper":
             transcript = vtrans.parse_srt(srt_path)
@@ -326,17 +344,19 @@ def process_video(
         elif transcript_mode == "subs":
             return {"error": "transcript_mode='subs' but no subtitles available."}
         else:
+            await ctx.report_progress(40, 100, f"Transcrevendo com Whisper ({whisper_model})…")
             try:
-                transcript = vtrans.transcribe_whisper(
-                    audio, model_name=whisper_model
+                transcript = await asyncio.to_thread(
+                    vtrans.transcribe_whisper, audio, model_name=whisper_model
                 )
                 transcript_source = f"Whisper local ({whisper_model})"
             except Exception as e:  # noqa: BLE001
                 return {"error": f"Whisper transcription failed: {e}"}
 
         # Frames + OCR
-        extracted = vframes.extract_scenes(video_path, work / "frames")
-        vframes.ocr_frames(extracted)
+        await ctx.report_progress(65, 100, "Extraindo e lendo quadros-chave…")
+        extracted = await asyncio.to_thread(vframes.extract_scenes, video_path, work / "frames")
+        await asyncio.to_thread(vframes.ocr_frames, extracted)
 
         # Vision
         do_vision = vision_provider and vision_provider != "none"
@@ -349,7 +369,9 @@ def process_video(
                         f"configured. Use set_api_key first."
                     )
                 }
-            descs = vvision.describe_frames_parallel(
+            await ctx.report_progress(80, 100, f"Descrevendo cenas com {vision_provider}…")
+            descs = await asyncio.to_thread(
+                vvision.describe_frames_parallel,
                 [f.image_path for f in extracted],
                 provider=vision_provider,
                 max_workers=5,
@@ -358,6 +380,7 @@ def process_video(
                 if d:
                     f.vision_description = d
 
+        await ctx.report_progress(90, 100, "Montando Markdown final…")
         md = vmerger.build_full(
             meta=meta,
             transcript=transcript,
@@ -390,6 +413,7 @@ def process_video(
     }
     if return_content:
         result["markdown"] = md
+    await ctx.report_progress(100, 100, "Concluído")
     return result
 
 
@@ -425,7 +449,7 @@ def set_api_key(
         video_config.set_key(provider, key)
     except (ValueError, PermissionError) as e:
         return f"ERROR: {e}"
-    return f"OK — {provider} key saved."
+    return f"OK - {provider} key saved."
 
 
 @mcp.tool()
@@ -439,7 +463,7 @@ def delete_api_key(
         video_config.delete_key(provider)
     except (ValueError, PermissionError) as e:
         return f"ERROR: {e}"
-    return f"OK — {provider} key removed."
+    return f"OK - {provider} key removed."
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +504,7 @@ def _install_into_claude_desktop() -> int:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             print(
-                f"! Config file at {cfg_path} is malformed; refusing to overwrite.",
+                f"[!] Config file at {cfg_path} is malformed; refusing to overwrite.",
                 file=sys.stderr,
             )
             return 1
@@ -495,8 +519,11 @@ def _install_into_claude_desktop() -> int:
         "args": [str(Path(__file__).resolve())],
     }
     cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    print(f"✓ Registered DocToMarkdown in {cfg_path}")
-    print("  Restart Claude Desktop to pick up the change.")
+    # Use ASCII-safe status glyphs — some Windows consoles are cp1252 and choke
+    # on the U+2713 check mark, which would crash the installer even though
+    # the config file has already been written above.
+    print(f"[ok] Registered DocToMarkdown in {cfg_path}")
+    print("     Restart Claude Desktop to pick up the change.")
     return 0
 
 
@@ -505,7 +532,7 @@ def _uninstall_from_claude_desktop() -> int:
 
     cfg_path = _claude_desktop_config_path()
     if not cfg_path.exists():
-        print(f"! No config file at {cfg_path}", file=sys.stderr)
+        print(f"[!] No config file at {cfg_path}", file=sys.stderr)
         return 0
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     servers = cfg.get("mcpServers") or {}
@@ -514,7 +541,7 @@ def _uninstall_from_claude_desktop() -> int:
         return 0
     del servers["doctomarkdown"]
     cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    print(f"✓ Removed DocToMarkdown from {cfg_path}")
+    print(f"[ok] Removed DocToMarkdown from {cfg_path}")
     return 0
 
 

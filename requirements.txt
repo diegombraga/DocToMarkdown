@@ -1,6 +1,9 @@
 flask>=3.0
 markitdown[all]>=0.1.6
 
+# OCR helper — enables per-page progress reporting in /convert/start
+pikepdf>=9.0
+
 # Video pipeline
 yt-dlp>=2024.11.0
 openai-whisper>=20240930

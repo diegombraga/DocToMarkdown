@@ -499,6 +499,13 @@
         </button>
         <span class="action-hint" id="convert-hint">Selecione um arquivo para começar.</span>
       </div>
+      <div class="progress-block hidden" id="file-progress-block">
+        <div class="progress-track"><div class="progress-fill" id="file-progress-fill"></div></div>
+        <div class="progress-meta">
+          <span class="progress-dot"></span>
+          <span id="file-progress-text">Iniciando…</span>
+        </div>
+      </div>
       <div class="status-line" id="convert-status"></div>
     </div>
 
@@ -698,10 +705,8 @@ function esc(s){
     ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
-/* Minimal Markdown → HTML renderer.
-   Handles headings, paragraphs, bold/italic, inline code, fenced code,
-   blockquote, lists (ul/ol), horizontal rule, links, tables. This is what
-   markitdown + our video merger emit — no need for a full CommonMark. */
+/* Minimal Markdown → HTML renderer. Handles what markitdown + our video
+   merger emit — no need for a full CommonMark. */
 function renderMarkdown(md){
   if (!md) return "";
   const lines = md.replace(/\r\n?/g, "\n").split("\n");
@@ -709,9 +714,7 @@ function renderMarkdown(md){
   let i = 0;
 
   function inline(text){
-    // Escape first, then apply inline patterns on the escaped string.
     let s = esc(text);
-    // Fenced-inline code protected
     const codeStore = [];
     s = s.replace(/`([^`]+)`/g, (_,c)=>{
       codeStore.push(c);
@@ -729,22 +732,19 @@ function renderMarkdown(md){
   while (i < lines.length){
     let line = lines[i];
 
-    // Fenced code block
     if (/^```/.test(line)){
       const lang = line.replace(/^```/,"").trim();
       i++;
       const buf = [];
       while (i < lines.length && !/^```/.test(lines[i])){ buf.push(lines[i]); i++; }
-      i++; // skip closing fence
+      i++;
       const langCls = lang ? ` class="lang-${esc(lang)}"` : "";
       out.push(`<pre><code${langCls}>${esc(buf.join("\n"))}</code></pre>`);
       continue;
     }
 
-    // Horizontal rule
     if (/^(?:---|\*\*\*|___)\s*$/.test(line)){ out.push("<hr/>"); i++; continue; }
 
-    // Heading
     const h = /^(#{1,6})\s+(.*)$/.exec(line);
     if (h){
       const lv = h[1].length;
@@ -752,7 +752,6 @@ function renderMarkdown(md){
       i++; continue;
     }
 
-    // Blockquote (consecutive lines starting with >)
     if (/^>\s?/.test(line)){
       const buf = [];
       while (i < lines.length && /^>\s?/.test(lines[i])){
@@ -763,7 +762,6 @@ function renderMarkdown(md){
       continue;
     }
 
-    // Unordered list
     if (/^[-*+]\s+/.test(line)){
       const items = [];
       while (i < lines.length && /^[-*+]\s+/.test(lines[i])){
@@ -774,7 +772,6 @@ function renderMarkdown(md){
       continue;
     }
 
-    // Ordered list
     if (/^\d+\.\s+/.test(line)){
       const items = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i])){
@@ -785,13 +782,12 @@ function renderMarkdown(md){
       continue;
     }
 
-    // Table
     if (i+1 < lines.length &&
         /\|/.test(line) &&
         /^\s*\|?\s*:?-{2,}/.test(lines[i+1])){
       const parseRow = r => r.replace(/^\s*\||\|\s*$/g, "").split("|").map(c=>c.trim());
       const head = parseRow(line);
-      i += 2; // skip separator
+      i += 2;
       const rows = [];
       while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim().length > 0){
         rows.push(parseRow(lines[i])); i++;
@@ -805,10 +801,8 @@ function renderMarkdown(md){
       continue;
     }
 
-    // Blank line
     if (/^\s*$/.test(line)){ i++; continue; }
 
-    // Paragraph: consume until blank line, hr, heading, list, table, quote, fence.
     const buf = [];
     while (i < lines.length &&
            lines[i].trim() !== "" &&
@@ -855,13 +849,12 @@ $$(".tab").forEach(btn => {
     $$(".tab").forEach(b => b.classList.toggle("active", b === btn));
     $$(".pane").forEach(p => p.classList.remove("active"));
     $(`pane-${t}`).classList.add("active");
-    // Clear result when switching tabs
     hideResult();
   });
 });
 
 /* ═════════════════════════════════════════════════════════════
-   File tab — dropzone
+   File tab — dropzone + async convert job
    ═════════════════════════════════════════════════════════════ */
 const dz         = $("dropzone");
 const fileInput  = $("file-input");
@@ -935,6 +928,18 @@ function langsStr(){
   return s || "por";
 }
 
+const fileProgressBlock = $("file-progress-block");
+const fileProgressFill  = $("file-progress-fill");
+const fileProgressText  = $("file-progress-text");
+
+function resetConvertButton(){
+  state.converting = false;
+  btnConvert.disabled = !state.file;
+  $("btn-convert-icon").innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+  $("btn-convert-label").textContent = "Converter para Markdown";
+  fileProgressBlock.classList.add("hidden");
+}
+
 btnConvert.addEventListener("click", async () => {
   if (!state.file || state.converting) return;
   state.converting = true;
@@ -943,6 +948,9 @@ btnConvert.addEventListener("click", async () => {
   $("btn-convert-label").textContent = state.ocr ? "Rodando OCR + convertendo…" : "Convertendo…";
   convertStatus.className = "status-line busy";
   convertStatus.textContent = "";
+  fileProgressBlock.classList.remove("hidden");
+  fileProgressFill.style.width = "0%";
+  fileProgressText.textContent = "Enviando arquivo…";
   hideResult();
 
   const fd = new FormData();
@@ -952,25 +960,50 @@ btnConvert.addEventListener("click", async () => {
   fd.append("langs", langsStr());
 
   try {
-    const res = await fetch("/convert", { method:"POST", body:fd });
+    const res = await fetch("/convert/start", { method:"POST", body:fd });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha na conversão");
-
-    const meta = `${(data.chars || 0).toLocaleString("pt-BR")} caracteres` +
-                 (data.did_ocr ? " · OCR aplicado" : "");
-    showResult(data.markdown || "", data.filename || "output.md", meta, null);
-    convertStatus.className = "status-line ok";
-    convertStatus.textContent = "Pronto.";
+    if (!res.ok) throw new Error(data.error || "Falha ao iniciar conversão");
+    subscribeToConvertJob(data.job_id);
   } catch (err){
     convertStatus.className = "status-line err";
     convertStatus.textContent = "Erro: " + err.message;
-  } finally {
-    state.converting = false;
-    btnConvert.disabled = !state.file;
-    $("btn-convert-icon").innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
-    $("btn-convert-label").textContent = "Converter para Markdown";
+    resetConvertButton();
   }
 });
+
+function subscribeToConvertJob(jobId){
+  const es = new EventSource(`/convert/status/${jobId}`);
+
+  es.onmessage = async (ev) => {
+    let data;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (data.pct != null) fileProgressFill.style.width = `${data.pct}%`;
+    if (data.message) fileProgressText.textContent = data.message;
+
+    if (data.stage === "done"){
+      es.close();
+      try {
+        const r = await fetch(`/convert/result/${jobId}`).then(x => x.json());
+        const meta = `${(r.chars || 0).toLocaleString("pt-BR")} caracteres` +
+                     (r.did_ocr ? " · OCR aplicado" : "");
+        showResult(r.markdown || "", r.filename || "output.md", meta, null, r.download_url);
+        convertStatus.className = "status-line ok";
+        convertStatus.textContent = "Pronto.";
+      } catch (err){
+        convertStatus.className = "status-line err";
+        convertStatus.textContent = "Erro: " + err.message;
+      }
+      resetConvertButton();
+    }
+    if (data.stage === "failed"){
+      es.close();
+      convertStatus.className = "status-line err";
+      convertStatus.textContent = "Erro: " + (data.message || "falha desconhecida");
+      resetConvertButton();
+    }
+  };
+  es.onerror = () => { /* Flask dev server flakes on SSE occasionally; UI recovers on next event */ };
+}
 
 /* ═════════════════════════════════════════════════════════════
    Video tab
@@ -1123,7 +1156,7 @@ function subscribeToJob(jobId){
       const meta = `${(r.chars || 0).toLocaleString("pt-BR")} caracteres · fonte: ${r.transcript_source || ""}` +
                    (r.vision_provider ? ` · vision: ${r.vision_provider}` : "");
       const artifacts = r.artifacts || {};
-      showResult(r.markdown || "", r.filename || "video.md", meta, artifacts);
+      showResult(r.markdown || "", r.filename || "video.md", meta, artifacts, artifacts["video.md"]);
 
       videoStatus.className = "status-line ok";
       videoStatus.textContent = "Pronto.";
@@ -1156,8 +1189,8 @@ const resultRendered = $("result-rendered");
 const resultRaw = $("result-raw");
 const artifactList = $("artifact-list");
 
-function showResult(md, filename, meta, artifacts){
-  state.result = { md, filename };
+function showResult(md, filename, meta, artifacts, downloadUrl){
+  state.result = { md, filename, downloadUrl: downloadUrl || null };
   state.view = "rendered";
   resultMeta.textContent = meta || "";
   resultRendered.innerHTML = renderMarkdown(md);
@@ -1211,6 +1244,13 @@ $("btn-copy").addEventListener("click", async () => {
 
 $("btn-download").addEventListener("click", () => {
   if (!state.result) return;
+  // Prefer a server-backed attachment URL: pywebview's WebView2 backend
+  // silently drops blob-URL <a download> clicks unless the request comes
+  // from a real navigation with a Content-Disposition header.
+  if (state.result.downloadUrl){
+    window.location.href = state.result.downloadUrl;
+    return;
+  }
   const blob = new Blob([state.result.md], { type:"text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
