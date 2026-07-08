@@ -65,6 +65,7 @@ def _convert_pipeline(
     use_ocr: bool,
     force_ocr: bool,
     langs: str,
+    source_path: Path | None = None,
 ) -> None:
     try:
         target = saved_path
@@ -130,6 +131,20 @@ def _convert_pipeline(
         md_path = saved_path.parent / out_name
         md_path.write_text(md, encoding="utf-8")
 
+        # Auto-save next to the original when we know where it lives (the
+        # desktop app passes source_path via the native picker / drag-drop;
+        # plain-browser uploads can't reveal it, so saved_to stays None there).
+        saved_to = None
+        if source_path is not None:
+            try:
+                dest = source_path.with_suffix(".md")
+                if dest.resolve() == source_path.resolve():
+                    dest = source_path.parent / (source_path.stem + ".converted.md")
+                dest.write_text(md, encoding="utf-8")
+                saved_to = str(dest)
+            except OSError:
+                saved_to = None  # unwritable dir — download button still works
+
         with _CONVERT_LOCK:
             job = _CONVERT_JOBS[job_id]
             job["md_path"] = str(md_path)
@@ -141,6 +156,7 @@ def _convert_pipeline(
                 "ocr_log": ocr_log if did_ocr else None,
                 "chars": len(md),
                 "download_url": f"/convert/download/{job_id}",
+                "saved_to": saved_to,
             }
         _convert_emit(job_id, "done", 100, "Pronto.")
     except Exception as e:  # noqa: BLE001
@@ -274,12 +290,23 @@ def convert():
 def convert_start():
     if not MARKITDOWN:
         return jsonify({"error": "markitdown não está instalado no PATH"}), 500
-    if "file" not in request.files:
-        return jsonify({"error": "Nenhum arquivo enviado"}), 400
 
-    f = request.files["file"]
-    if not f.filename:
-        return jsonify({"error": "Arquivo sem nome"}), 400
+    # Optional absolute path of the original file on this machine. Sent by
+    # the desktop app (native picker or drag-drop full path); enables saving
+    # the .md next to the original. Two accepted shapes:
+    #   - upload + source_path  -> convert the upload, save alongside source
+    #   - source_path only      -> read the file straight from disk
+    source_path: Path | None = None
+    raw_source = (request.form.get("source_path") or "").strip()
+    if raw_source:
+        candidate = Path(raw_source).expanduser()
+        if candidate.is_file():
+            source_path = candidate
+
+    f = request.files.get("file")
+    has_upload = f is not None and bool(f.filename)
+    if not has_upload and source_path is None:
+        return jsonify({"error": "Nenhum arquivo enviado"}), 400
 
     use_ocr = request.form.get("use_ocr") == "true"
     force_ocr = request.form.get("force_ocr") == "true"
@@ -294,8 +321,19 @@ def convert_start():
     job_id = uuid.uuid4().hex[:12]
     job_dir = _CONVERT_BASE_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
-    saved_path = job_dir / Path(f.filename).name
-    f.save(str(saved_path))
+
+    if has_upload:
+        # Sanity: only honour source_path when it matches the uploaded name,
+        # so a stale path from a previous selection can't hijack the save.
+        if source_path is not None and source_path.name != Path(f.filename).name:
+            source_path = None
+        orig_filename = f.filename
+        saved_path = job_dir / Path(f.filename).name
+        f.save(str(saved_path))
+    else:
+        orig_filename = source_path.name
+        saved_path = job_dir / source_path.name
+        shutil.copy2(source_path, saved_path)
 
     with _CONVERT_LOCK:
         _CONVERT_JOBS[job_id] = {
@@ -311,7 +349,7 @@ def convert_start():
 
     threading.Thread(
         target=_convert_pipeline,
-        args=(job_id, saved_path, f.filename, use_ocr, force_ocr, langs),
+        args=(job_id, saved_path, orig_filename, use_ocr, force_ocr, langs, source_path),
         daemon=True,
     ).start()
     return jsonify({"job_id": job_id})

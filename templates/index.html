@@ -822,6 +822,7 @@ function renderMarkdown(md){
 const state = {
   tab: "arquivo",
   file: null,
+  sourcePath: null,   // absolute path of the original (desktop app only)
   ocr: false,
   force: false,
   langs: {por:true, eng:true, spa:false, fra:false, ita:false, deu:false},
@@ -866,11 +867,30 @@ const btnConvert = $("btn-convert");
 const convertStatus = $("convert-status");
 const convertHint = $("convert-hint");
 
-dz.addEventListener("click", (e) => {
+/* Native file picker (desktop app only). Returns true when handled —
+   either a file was picked or the user cancelled the native dialog —
+   so the caller must NOT fall back to the HTML input in that case. */
+async function pickNative(){
+  try {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.pick_file){
+      const p = await window.pywebview.api.pick_file();
+      if (p) setPickedPath(p);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+dz.addEventListener("click", async (e) => {
   if (e.target.closest("#dz-swap")) return;
+  if (await pickNative()) return;
   fileInput.click();
 });
-$("dz-swap").addEventListener("click", (e)=>{ e.stopPropagation(); fileInput.click(); });
+$("dz-swap").addEventListener("click", async (e)=>{
+  e.stopPropagation();
+  if (await pickNative()) return;
+  fileInput.click();
+});
 
 ["dragenter","dragover"].forEach(evt => dz.addEventListener(evt, e => {
   e.preventDefault(); dz.classList.add("drag");
@@ -885,23 +905,45 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files.length) setFile(fileInput.files[0]);
 });
 
+function fileHints(name, hasPath){
+  const isPdf = name.toLowerCase().endsWith(".pdf");
+  if (isPdf && !state.ocr){
+    convertStatus.className = "status-line warn";
+    convertStatus.textContent = "Dica: se este PDF é escaneado (sem camada de texto), ligue OCR à direita.";
+  } else if (hasPath){
+    convertStatus.className = "status-line";
+    convertStatus.textContent = "O .md será salvo automaticamente na mesma pasta do original.";
+  } else {
+    convertStatus.textContent = "";
+    convertStatus.className = "status-line";
+  }
+}
+
 function setFile(f){
   state.file = f;
+  // pywebview (app desktop) anota o caminho absoluto em arquivos arrastados;
+  // em navegador comum a propriedade não existe e seguimos só com o upload.
+  state.sourcePath = f.pywebviewFullPath || null;
   dzEmpty.classList.add("hidden");
   dzFile.classList.remove("hidden");
   dzFileName.textContent = f.name;
   dzFileSize.textContent = `${(f.size / 1024 / 1024).toFixed(2)} MB`;
   btnConvert.disabled = false;
   convertHint.classList.add("hidden");
+  fileHints(f.name, !!state.sourcePath);
+}
 
-  const isPdf = f.name.toLowerCase().endsWith(".pdf");
-  if (isPdf && !state.ocr){
-    convertStatus.className = "status-line warn";
-    convertStatus.textContent = "Dica: se este PDF é escaneado (sem camada de texto), ligue OCR à direita.";
-  } else {
-    convertStatus.textContent = "";
-    convertStatus.className = "status-line";
-  }
+function setPickedPath(p){
+  state.file = null;                 // backend lê direto do disco
+  state.sourcePath = p;
+  const base = p.split(/[\\/]/).pop();
+  dzEmpty.classList.add("hidden");
+  dzFile.classList.remove("hidden");
+  dzFileName.textContent = base;
+  dzFileSize.textContent = "arquivo no disco";
+  btnConvert.disabled = false;
+  convertHint.classList.add("hidden");
+  fileHints(base, true);
 }
 
 /* OCR toggles + langs */
@@ -941,7 +983,7 @@ function resetConvertButton(){
 }
 
 btnConvert.addEventListener("click", async () => {
-  if (!state.file || state.converting) return;
+  if ((!state.file && !state.sourcePath) || state.converting) return;
   state.converting = true;
   btnConvert.disabled = true;
   $("btn-convert-icon").innerHTML = '<span class="spinner"></span>';
@@ -950,11 +992,12 @@ btnConvert.addEventListener("click", async () => {
   convertStatus.textContent = "";
   fileProgressBlock.classList.remove("hidden");
   fileProgressFill.style.width = "0%";
-  fileProgressText.textContent = "Enviando arquivo…";
+  fileProgressText.textContent = state.file ? "Enviando arquivo…" : "Lendo arquivo do disco…";
   hideResult();
 
   const fd = new FormData();
-  fd.append("file", state.file);
+  if (state.file) fd.append("file", state.file);
+  if (state.sourcePath) fd.append("source_path", state.sourcePath);
   fd.append("use_ocr",   state.ocr   ? "true" : "false");
   fd.append("force_ocr", state.force ? "true" : "false");
   fd.append("langs", langsStr());
@@ -985,10 +1028,13 @@ function subscribeToConvertJob(jobId){
       try {
         const r = await fetch(`/convert/result/${jobId}`).then(x => x.json());
         const meta = `${(r.chars || 0).toLocaleString("pt-BR")} caracteres` +
-                     (r.did_ocr ? " · OCR aplicado" : "");
+                     (r.did_ocr ? " · OCR aplicado" : "") +
+                     (r.saved_to ? " · salvo ao lado do original" : "");
         showResult(r.markdown || "", r.filename || "output.md", meta, null, r.download_url);
         convertStatus.className = "status-line ok";
-        convertStatus.textContent = "Pronto.";
+        convertStatus.textContent = r.saved_to
+          ? `Pronto. Arquivo salvo em: ${r.saved_to}`
+          : "Pronto.";
       } catch (err){
         convertStatus.className = "status-line err";
         convertStatus.textContent = "Erro: " + err.message;

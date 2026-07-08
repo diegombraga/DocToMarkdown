@@ -46,6 +46,30 @@ import webview  # noqa: E402
 from app import app  # noqa: E402
 
 
+class Api:
+    """JS-accessible bridge (window.pywebview.api).
+
+    Lets the frontend open the OS-native file picker, which — unlike the
+    HTML <input type=file> — returns the file's absolute path. With the
+    path in hand the backend can save the converted .md right next to
+    the original file, which a browser upload can never do.
+    """
+
+    def pick_file(self) -> str | None:
+        win = webview.windows[0] if webview.windows else None
+        if win is None:
+            return None
+        try:
+            dialog_enum = getattr(webview, "FileDialog", None)
+            mode = dialog_enum.OPEN if dialog_enum else webview.OPEN_DIALOG
+            result = win.create_file_dialog(mode, allow_multiple=False)
+        except Exception:
+            return None
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else str(result)
+
+
 def _pick_free_port(preferred: int = 5555) -> int:
     for candidate in (preferred, 0):
         try:
@@ -110,6 +134,7 @@ def main() -> int:
         height=800,
         min_size=(720, 520),
         text_select=True,
+        js_api=Api(),
     )
     # `pywebview` auto-selects the best backend for the current OS.
     webview.start()
