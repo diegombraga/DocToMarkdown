@@ -156,8 +156,9 @@ jobs:
       - name: Install minimal deps
         run: |
           python -m pip install --upgrade pip
-          # Only lightweight deps needed for the smoke test — no whisper/torch
-          pip install pytest yt-dlp Pillow scenedetect anthropic openai google-generativeai
+          # Only lightweight deps needed for the smoke test — no whisper/torch.
+          # mcp is included so test_mcp_compat exercises the 1.x/2.x import layer.
+          pip install pytest yt-dlp Pillow scenedetect anthropic openai google-generativeai "mcp[cli]"
       - name: Run pytest
         env:
           # Ensure vision module autodetect returns None

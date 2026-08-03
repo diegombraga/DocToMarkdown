@@ -4,11 +4,15 @@ Exposes the file-conversion and video-processing pipelines as MCP tools that
 any Claude product (Claude Desktop, Claude Code, claude.ai with connectors)
 can invoke natively via tool-use — no HTTP calls, no shell wrangling.
 
-Long-running tools (convert_file, process_video) are async and report
-progress via the MCP Context so clients can display a live progress bar
-instead of a spinning cursor for minutes. Blocking calls (subprocess,
-Whisper, yt-dlp, vision APIs) are dispatched via asyncio.to_thread so the
-progress notifications actually reach the client.
+Long-running tools (convert_file, convert_folder, process_video) are
+async and report progress via the MCP Context so clients can display a
+live progress bar instead of a spinning cursor for minutes. Blocking
+calls (subprocess, Whisper, yt-dlp, vision APIs) are dispatched via
+asyncio.to_thread so the progress notifications actually reach the
+client.
+
+Compatible with both mcp 1.x (FastMCP) and 2.x (MCPServer) — see the
+import block below.
 
 Run standalone:
     python mcp_server.py
@@ -35,25 +39,32 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
-try:
-    from mcp.server.fastmcp import Context, FastMCP
-except ModuleNotFoundError as _e:  # pragma: no cover - environment guard
-    # mcp 2.x removed mcp.server.fastmcp (FastMCP moved to
-    # mcp.server.mcpserver with a different API). Fail with an actionable
-    # message instead of a bare traceback in the Claude Desktop log.
+# Works on both mcp 1.x and 2.x. In 2.0 the server class was renamed
+# (FastMCP -> MCPServer) and moved (mcp.server.fastmcp ->
+# mcp.server.mcpserver), but the surface this project relies on — the
+# @server.tool() decorator, the injected Context with report_progress,
+# and server.run() over stdio — is identical in both.
+try:  # mcp >= 2.0
+    from mcp.server.mcpserver import Context, MCPServer as _ServerClass
+except ModuleNotFoundError:  # mcp 1.x
     try:
-        from importlib.metadata import version as _pkg_version
+        from mcp.server.fastmcp import Context, FastMCP as _ServerClass
+    except ModuleNotFoundError as _e:  # pragma: no cover - environment guard
+        try:
+            from importlib.metadata import version as _pkg_version
 
-        _installed = _pkg_version("mcp")
-    except Exception:  # noqa: BLE001
-        _installed = "unknown"
-    raise SystemExit(
-        "DocToMarkdown MCP requires the mcp 1.x API (mcp.server.fastmcp), "
-        f"but mcp {_installed} is installed.\n"
-        "Fix with:\n"
-        "  <runtime>/.venv/bin/pip install 'mcp[cli]>=1.2.0,<2.0'\n"
-        "or re-run the DocToMarkdown installer, which now pins it."
-    ) from _e
+            _installed = _pkg_version("mcp")
+        except Exception:  # noqa: BLE001
+            _installed = "unknown"
+        raise SystemExit(
+            "DocToMarkdown MCP could not find a supported server class in the "
+            f"installed mcp package (version {_installed}). Expected either "
+            "mcp.server.mcpserver.MCPServer (2.x) or "
+            "mcp.server.fastmcp.FastMCP (1.x).\n"
+            "Fix with:\n"
+            "  <runtime>/.venv/bin/pip install --upgrade 'mcp[cli]'\n"
+            "or re-run the DocToMarkdown installer."
+        ) from _e
 
 from pydantic import Field
 
@@ -70,7 +81,7 @@ from video import transcriber as vtrans  # noqa: E402
 from video import vision as vvision  # noqa: E402
 
 
-mcp = FastMCP("doctomarkdown")
+mcp = _ServerClass("doctomarkdown")
 
 
 # ---------------------------------------------------------------------------

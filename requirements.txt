@@ -15,11 +15,10 @@ anthropic>=0.40.0
 openai>=1.50.0
 google-generativeai>=0.8.0
 
-# MCP server (Claude Desktop / Claude Code integration)
-# Pinned below 2.0: mcp 2.x dropped the mcp.server.fastmcp module this
-# project is written against (FastMCP + Context). Upgrading requires a
-# port to the new mcp.server.mcpserver API — tracked separately.
-mcp[cli]>=1.2.0,<2.0
+# MCP server (Claude Desktop / Claude Code integration).
+# mcp_server.py supports both the 1.x (FastMCP) and 2.x (MCPServer) APIs,
+# so this can float; the import layer picks whichever is installed.
+mcp[cli]>=1.2.0
 
 # Native desktop app (WebKit/WebView2 wrapper — no Electron bloat)
 pywebview>=5.0
