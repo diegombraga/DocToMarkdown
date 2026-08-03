@@ -417,6 +417,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
         Vídeo / URL
       </button>
+      <button class="tab" role="tab" data-tab="lote" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Lote
+      </button>
     </div>
 
     <!-- ═══════════════════ Pane Arquivo ═══════════════════ -->
@@ -598,6 +602,92 @@
           </div>
 
           <div class="status-line" id="video-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ Pane Lote ═══════════════════ -->
+    <div class="pane" id="pane-lote">
+      <div class="video-stack">
+        <!-- Folder card -->
+        <div class="card">
+          <label class="field-label" for="batch-folder">Pasta com os arquivos</label>
+          <div class="url-row">
+            <input type="text" id="batch-folder" class="input" placeholder="/Users/voce/Documents/MinhaPasta" />
+            <button class="btn btn-dark btn-sm" id="btn-pick-folder" type="button">Escolher pasta</button>
+          </div>
+          <div class="opt-desc" style="margin-top:8px;">
+            Todos os arquivos suportados dentro da pasta serão convertidos, e cada <code>.md</code> é salvo ao lado do arquivo original.
+          </div>
+          <div id="batch-scan-area"></div>
+          <div class="status-line" id="batch-scan-status"></div>
+        </div>
+
+        <!-- Options card -->
+        <div class="card hidden" id="batch-opts-card">
+          <div class="section-title">Opções do lote</div>
+
+          <div class="video-opts-grid">
+            <div class="opt-row" style="padding:0;">
+              <input type="checkbox" id="opt-batch-recursive" class="switch" />
+              <div class="opt-body">
+                <label for="opt-batch-recursive" class="opt-title">Incluir subpastas</label>
+                <div class="opt-desc">Converte também arquivos dentro de pastas internas.</div>
+              </div>
+            </div>
+            <div class="opt-row" style="padding:0;">
+              <input type="checkbox" id="opt-batch-overwrite" class="switch" />
+              <div class="opt-body">
+                <label for="opt-batch-overwrite" class="opt-title">Reconverter existentes</label>
+                <div class="opt-desc">Sobrescreve <code>.md</code> que já existirem. Desligado = pula.</div>
+              </div>
+            </div>
+            <div class="opt-row" style="padding:0;">
+              <input type="checkbox" id="opt-batch-ocr" class="switch" />
+              <div class="opt-body">
+                <label for="opt-batch-ocr" class="opt-title">Rodar OCR nos PDFs</label>
+                <div class="opt-desc">Para PDFs escaneados sem camada de texto.</div>
+              </div>
+            </div>
+            <div class="opt-row disabled" id="opt-row-batch-force" style="padding:0;">
+              <input type="checkbox" id="opt-batch-force" class="switch" />
+              <div class="opt-body">
+                <label for="opt-batch-force" class="opt-title">Forçar OCR</label>
+                <div class="opt-desc">Refaz mesmo se o PDF já tiver texto.</div>
+              </div>
+            </div>
+
+            <div style="grid-column:1 / -1;">
+              <div class="section-title" style="margin-bottom:10px;">Idiomas do OCR</div>
+              <div class="chip-row" id="batch-lang-chips">
+                <span class="chip on" data-l="por">Português</span>
+                <span class="chip on" data-l="eng">Inglês</span>
+                <span class="chip" data-l="spa">Espanhol</span>
+                <span class="chip" data-l="fra">Francês</span>
+                <span class="chip" data-l="ita">Italiano</span>
+                <span class="chip" data-l="deu">Alemão</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-bar" style="margin-top:18px;">
+            <button class="btn btn-primary" id="btn-batch" type="button" disabled>
+              <span id="btn-batch-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </span>
+              <span id="btn-batch-label">Converter em lote</span>
+            </button>
+          </div>
+
+          <div class="progress-block hidden" id="batch-progress-block">
+            <div class="progress-track"><div class="progress-fill" id="batch-progress-fill"></div></div>
+            <div class="progress-meta">
+              <span class="progress-dot"></span>
+              <span id="batch-progress-text">Iniciando…</span>
+            </div>
+          </div>
+
+          <div class="status-line" id="batch-status"></div>
         </div>
       </div>
     </div>
@@ -957,13 +1047,21 @@ optOcr.addEventListener("change", () => {
 });
 optForce.addEventListener("change", () => { state.force = optForce.checked; });
 
-$("lang-chips").addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (!chip) return;
-  const l = chip.dataset.l;
-  state.langs[l] = !state.langs[l];
-  chip.classList.toggle("on", state.langs[l]);
-});
+/* Language chips exist on both the Arquivo and Lote tabs — one shared
+   state, clicks in either row keep every twin chip in sync. */
+function bindLangChips(containerId){
+  const el = $(containerId);
+  if (!el) return;
+  el.addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    const l = chip.dataset.l;
+    state.langs[l] = !state.langs[l];
+    $$(`.chip[data-l="${l}"]`).forEach(c => c.classList.toggle("on", state.langs[l]));
+  });
+}
+bindLangChips("lang-chips");
+bindLangChips("batch-lang-chips");
 
 function langsStr(){
   const s = Object.entries(state.langs).filter(([_,v])=>v).map(([k])=>k).join("+");
@@ -1224,6 +1322,217 @@ function resetProcessButton(){
   btnProcess.disabled = false;
   $("btn-process-icon").innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
   $("btn-process-label").textContent = "Processar vídeo";
+}
+
+/* ═════════════════════════════════════════════════════════════
+   Batch tab (Lote)
+   ═════════════════════════════════════════════════════════════ */
+const batchFolder = $("batch-folder");
+const batchScanArea = $("batch-scan-area");
+const batchScanStatus = $("batch-scan-status");
+const batchOptsCard = $("batch-opts-card");
+const btnBatch = $("btn-batch");
+const batchStatus = $("batch-status");
+const batchProgressBlock = $("batch-progress-block");
+const batchProgressFill = $("batch-progress-fill");
+const batchProgressText = $("batch-progress-text");
+const optBatchRecursive = $("opt-batch-recursive");
+const optBatchOverwrite = $("opt-batch-overwrite");
+const optBatchOcr = $("opt-batch-ocr");
+const optBatchForce = $("opt-batch-force");
+
+state.batch = { folder: null, total: 0, running: false };
+
+optBatchOcr.addEventListener("change", () => {
+  $("opt-row-batch-force").classList.toggle("disabled", !optBatchOcr.checked);
+  if (!optBatchOcr.checked) optBatchForce.checked = false;
+});
+optBatchRecursive.addEventListener("change", () => {
+  if (state.batch.folder) scanBatchFolder();
+});
+
+$("btn-pick-folder").addEventListener("click", async () => {
+  try {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.pick_folder){
+      const p = await window.pywebview.api.pick_folder();
+      if (p){
+        batchFolder.value = p;
+        await scanBatchFolder();
+      }
+      return;
+    }
+  } catch {}
+  // Sem pywebview (navegador): o campo de texto aceita o caminho digitado.
+  batchScanStatus.className = "status-line warn";
+  batchScanStatus.textContent = "Seletor nativo disponível só no app desktop — digite o caminho da pasta e pressione Enter.";
+});
+
+batchFolder.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") scanBatchFolder();
+});
+batchFolder.addEventListener("blur", () => {
+  if (batchFolder.value.trim() && batchFolder.value.trim() !== state.batch.folder) scanBatchFolder();
+});
+
+async function scanBatchFolder(){
+  const folder = batchFolder.value.trim();
+  if (!folder) return;
+  batchScanStatus.className = "status-line busy";
+  batchScanStatus.textContent = "Analisando pasta…";
+  batchScanArea.innerHTML = "";
+  btnBatch.disabled = true;
+
+  try {
+    const res = await fetch("/batch/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_path: folder, recursive: optBatchRecursive.checked }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao analisar");
+
+    state.batch.folder = data.folder;
+    state.batch.total = data.total;
+
+    const extList = Object.entries(data.by_ext || {})
+      .map(([ext, n]) => `<span class="format-chip">${esc(ext)} × ${n}</span>`)
+      .join("");
+    batchScanArea.innerHTML = `
+      <div class="video-preview" style="align-items:center;">
+        <div class="info">
+          <h3>${data.total} arquivo${data.total === 1 ? "" : "s"} suportado${data.total === 1 ? "" : "s"} encontrado${data.total === 1 ? "" : "s"}</h3>
+          <div class="format-chips" style="justify-content:flex-start; margin-top:8px;">${extList}</div>
+        </div>
+      </div>
+    `;
+    batchScanStatus.textContent = "";
+    batchOptsCard.classList.remove("hidden");
+
+    if (data.total === 0){
+      batchScanStatus.className = "status-line warn";
+      batchScanStatus.textContent = "Nenhum arquivo suportado nesta pasta. Ligue 'Incluir subpastas'?";
+    } else if (data.over_limit){
+      batchScanStatus.className = "status-line err";
+      batchScanStatus.textContent = `Limite de ${data.limit} arquivos por lote excedido — divida em subpastas.`;
+    } else {
+      btnBatch.disabled = false;
+      $("btn-batch-label").textContent = `Converter ${data.total} arquivo${data.total === 1 ? "" : "s"}`;
+    }
+  } catch (err){
+    batchScanStatus.className = "status-line err";
+    batchScanStatus.textContent = "Erro: " + err.message;
+  }
+}
+
+function resetBatchButton(){
+  state.batch.running = false;
+  btnBatch.disabled = !state.batch.total;
+  $("btn-batch-icon").innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+  $("btn-batch-label").textContent = state.batch.total
+    ? `Converter ${state.batch.total} arquivo${state.batch.total === 1 ? "" : "s"}`
+    : "Converter em lote";
+}
+
+btnBatch.addEventListener("click", async () => {
+  if (!state.batch.folder || state.batch.running) return;
+  state.batch.running = true;
+  btnBatch.disabled = true;
+  $("btn-batch-icon").innerHTML = '<span class="spinner"></span>';
+  $("btn-batch-label").textContent = "Convertendo…";
+  batchStatus.textContent = "";
+  batchProgressBlock.classList.remove("hidden");
+  batchProgressFill.style.width = "0%";
+  batchProgressText.textContent = "Iniciando…";
+  hideResult();
+
+  try {
+    const res = await fetch("/batch/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_path: state.batch.folder,
+        recursive: optBatchRecursive.checked,
+        overwrite: optBatchOverwrite.checked,
+        use_ocr: optBatchOcr.checked,
+        force_ocr: optBatchForce.checked,
+        langs: langsStr(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao iniciar lote");
+    subscribeToBatchJob(data.job_id);
+  } catch (err){
+    batchStatus.className = "status-line err";
+    batchStatus.textContent = "Erro: " + err.message;
+    resetBatchButton();
+  }
+});
+
+function subscribeToBatchJob(jobId){
+  const es = new EventSource(`/batch/status/${jobId}`);
+
+  es.onmessage = async (ev) => {
+    let data;
+    try { data = JSON.parse(ev.data); } catch { return; }
+    if (data.pct != null) batchProgressFill.style.width = `${data.pct}%`;
+    if (data.message) batchProgressText.textContent = data.message;
+
+    if (data.stage === "done"){
+      es.close();
+      try {
+        const r = await fetch(`/batch/result/${jobId}`).then(x => x.json());
+        showBatchResult(r);
+        batchStatus.className = "status-line ok";
+        batchStatus.textContent = data.message || "Pronto.";
+      } catch (err){
+        batchStatus.className = "status-line err";
+        batchStatus.textContent = "Erro: " + err.message;
+      }
+      resetBatchButton();
+    }
+    if (data.stage === "failed"){
+      es.close();
+      batchStatus.className = "status-line err";
+      batchStatus.textContent = "Erro: " + (data.message || "falha desconhecida");
+      resetBatchButton();
+    }
+  };
+  es.onerror = () => { /* SSE flake — recovers on next event */ };
+}
+
+function showBatchResult(r){
+  const lines = [];
+  lines.push("# Conversão em lote concluída");
+  lines.push("");
+  lines.push(`**Pasta:** ${state.batch.folder}`);
+  lines.push("");
+  lines.push(`| Resultado | Quantidade |`);
+  lines.push(`| --- | --- |`);
+  lines.push(`| Convertidos | ${r.converted.length} |`);
+  lines.push(`| Pulados (.md já existia) | ${r.skipped.length} |`);
+  lines.push(`| Falhas | ${r.failed.length} |`);
+  lines.push("");
+  if (r.converted.length){
+    lines.push("## Arquivos gerados");
+    lines.push("");
+    r.converted.forEach(p => lines.push(`- ${p}`));
+    lines.push("");
+  }
+  if (r.skipped.length){
+    lines.push("## Pulados");
+    lines.push("");
+    r.skipped.forEach(p => lines.push(`- ${p}`));
+    lines.push("");
+  }
+  if (r.failed.length){
+    lines.push("## Falhas");
+    lines.push("");
+    r.failed.forEach(f => lines.push(`- **${f.file}** — ${f.error}`));
+    lines.push("");
+  }
+  const md = lines.join("\n");
+  const meta = `${r.total} arquivo${r.total === 1 ? "" : "s"} · ${r.converted.length} convertidos · ${r.skipped.length} pulados · ${r.failed.length} falhas`;
+  showResult(md, "conversao-lote.md", meta, null, null);
 }
 
 /* ═════════════════════════════════════════════════════════════

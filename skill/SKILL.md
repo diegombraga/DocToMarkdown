@@ -23,7 +23,9 @@ Sempre que o usuário quiser **texto/markdown a partir de um arquivo**, mesmo qu
 
 ## Preferência de canal — MCP primeiro
 
-Se o Claude tem acesso ao **MCP server `doctomarkdown`** (ferramentas `convert_file`, `process_video`, `preview_video`, `list_supported_formats`, `get_provider_status`, `set_api_key`, `delete_api_key`), **use essas tools nativas** em vez de subprocessos. Elas são mais confiáveis e não dependem da UI web estar rodando.
+Se o Claude tem acesso ao **MCP server `doctomarkdown`** (ferramentas `convert_file`, `convert_folder`, `process_video`, `preview_video`, `list_supported_formats`, `get_provider_status`, `set_api_key`, `delete_api_key`), **use essas tools nativas** em vez de subprocessos. Elas são mais confiáveis e não dependem da UI web estar rodando.
+
+Para **conversão em lote** (pasta inteira), use `convert_folder(folder_path, recursive?, overwrite?, use_ocr?, ocr_langs?)` — converte todos os arquivos suportados da pasta, salva cada `.md` ao lado do original, pula os que já têm `.md` (a menos que `overwrite=True`), e retorna contagens + lista de falhas. Limite de 500 arquivos por chamada.
 
 Se as tools MCP não estiverem disponíveis (checar o tool palette antes), caia pra HTTP na porta 5555 (se a UI estiver rodando) ou pra subprocess `markitdown`/`ocrmypdf` diretamente.
 

@@ -205,6 +205,140 @@ def list_supported_formats() -> str:
     )
 
 
+_BATCH_EXTS = {
+    ".pdf", ".docx", ".pptx", ".xlsx", ".xls",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp",
+    ".html", ".htm", ".epub",
+    ".mp3", ".wav", ".m4a",
+    ".csv", ".tsv", ".json", ".xml", ".ipynb", ".zip",
+}
+_BATCH_MAX_FILES = 500
+
+
+def _scan_batch_folder(folder: Path, recursive: bool) -> list[Path]:
+    it = folder.rglob("*") if recursive else folder.glob("*")
+    out: list[Path] = []
+    for p in sorted(it):
+        if not p.is_file():
+            continue
+        if p.name.startswith(".") or p.name.startswith("~$"):
+            continue
+        if p.suffix.lower() in _BATCH_EXTS:
+            out.append(p)
+    return out
+
+
+def _convert_one_sync(
+    src: Path, use_ocr: bool, force_ocr: bool, langs: str, tmpdir: Path
+) -> str:
+    target = src
+    if use_ocr and src.suffix.lower() == ".pdf":
+        if OCRMYPDF is None:
+            raise RuntimeError("ocrmypdf is not installed")
+        ocred = tmpdir / f"ocr_{src.name}"
+        cmd = [OCRMYPDF, "-l", langs, "--optimize", "1"]
+        cmd.append("--force-ocr" if force_ocr else "--skip-text")
+        cmd += [str(src), str(ocred)]
+        proc = _run(cmd)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ocrmypdf failed: {(proc.stderr or proc.stdout)[-500:]}")
+        target = ocred
+    proc = _run([MARKITDOWN, str(target)])
+    if proc.returncode != 0:
+        raise RuntimeError(f"markitdown failed: {(proc.stderr or proc.stdout)[-500:]}")
+    return proc.stdout
+
+
+@mcp.tool()
+async def convert_folder(
+    ctx: Context,
+    folder_path: Annotated[
+        str, Field(description="Absolute path of the folder to convert.")
+    ],
+    recursive: Annotated[
+        bool, Field(description="Also convert files inside subfolders.")
+    ] = False,
+    overwrite: Annotated[
+        bool,
+        Field(
+            description=(
+                "Re-convert files whose .md already exists next to them. "
+                "Default False = skip those (idempotent re-runs)."
+            )
+        ),
+    ] = False,
+    use_ocr: Annotated[
+        bool, Field(description="Run OCR on PDFs before conversion.")
+    ] = False,
+    force_ocr: Annotated[
+        bool, Field(description="Re-OCR even pages that already have text.")
+    ] = False,
+    ocr_langs: Annotated[
+        str, Field(description="Tesseract language codes joined with '+'.")
+    ] = "por+eng",
+) -> dict:
+    """Convert every supported file in a folder to Markdown, saving each .md
+    next to its original file.
+
+    Skips hidden files, Office lock files and files whose .md already exists
+    (unless overwrite=True). One failed file does not stop the batch. Limited
+    to 500 files per call — split bigger trees into subfolders.
+
+    Returns counts plus the full failure list; converted paths are sampled
+    (first 20) to keep the response small — every .md is on disk regardless.
+    """
+    if MARKITDOWN is None:
+        return {"error": "markitdown is not installed on PATH."}
+
+    folder = Path(folder_path).expanduser()
+    if not folder.is_dir():
+        return {"error": f"folder not found: {folder}"}
+
+    files = _scan_batch_folder(folder, recursive)
+    if not files:
+        return {"error": "no supported files found in the folder."}
+    if len(files) > _BATCH_MAX_FILES:
+        return {
+            "error": (
+                f"{len(files)} files exceed the {_BATCH_MAX_FILES}-file batch "
+                f"limit. Split into subfolders."
+            )
+        }
+
+    converted: list[str] = []
+    skipped: list[str] = []
+    failed: list[dict] = []
+    total = len(files)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        for i, src in enumerate(files):
+            await ctx.report_progress(i, total, f"({i + 1}/{total}) {src.name}")
+            dest = src.with_suffix(".md")
+            if dest.exists() and not overwrite:
+                skipped.append(str(src))
+                continue
+            try:
+                md = await asyncio.to_thread(
+                    _convert_one_sync, src, use_ocr, force_ocr, ocr_langs, tmpdir
+                )
+                dest.write_text(md, encoding="utf-8")
+                converted.append(str(dest))
+            except Exception as e:  # noqa: BLE001
+                failed.append({"file": str(src), "error": str(e)})
+
+    await ctx.report_progress(total, total, "Concluído")
+    return {
+        "folder": str(folder),
+        "total": total,
+        "converted_count": len(converted),
+        "skipped_count": len(skipped),
+        "failed_count": len(failed),
+        "converted_sample": converted[:20],
+        "failed": failed,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tools — video pipeline
 # ---------------------------------------------------------------------------

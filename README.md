@@ -21,6 +21,7 @@ Everything is local, everything is free, everything is MIT-licensed.
 ## Features
 
 - **Drag-and-drop web UI** with live preview, copy, and `.md` download
+- **Batch conversion**: point at a local folder and every supported file inside gets converted, each `.md` saved next to its original (optional subfolder recursion, skip-or-overwrite semantics)
 - **Automatic OCR** for scanned PDFs (opt-in per file)
 - **Multi-language OCR**: Portuguese, English, Spanish, French, Italian, German out of the box — 100+ available
 - **Video → full-context Markdown**: paste any YouTube/Vimeo/etc. URL, get transcript + on-screen text + (optional) scene-by-scene visual description
@@ -62,6 +63,9 @@ docker compose up
 Double-click **DocToMarkdown** (macOS `/Applications`, Linux app menu, Windows Start Menu). A native window opens — no browser tab, own Dock/taskbar icon, own menu bar, standard keyboard shortcuts (⌘Q / Alt+F4 to quit). On the **📄 Arquivo** tab: drag a file, pick OCR languages if it's a scanned PDF, click **Converter**, copy or download the Markdown.
 
 Under the hood, the app runs a small Flask server on `127.0.0.1` bound to a random free port and hosts the UI in a WKWebView (macOS), WebView2 (Windows), or WebKitGTK (Linux). The HTTP API remains reachable from other tools while the window is open. If you prefer the pure server + browser flow (for LAN access or remote workflows), run `doc2md` from your terminal instead.
+
+### 1a. Desktop app — batch mode
+Switch to the **📁 Lote** tab, click **Escolher pasta** (native folder picker) or type an absolute path, review the scan summary (file count by extension), tune the options — include subfolders, re-convert existing `.md`, OCR + languages — and hit **Converter**. Each file's `.md` lands next to it; a summary report lists converted / skipped / failed files. Batches are capped at 500 files per run.
 
 ### 1b. Desktop app — video mode
 Switch to the **🎬 Vídeo / URL** tab. Paste a URL, click **Prever** to load the metadata card, choose options (download MP4, download MP3, subtitle vs. Whisper, vision provider), then **Processar**. A live progress bar shows each stage: download → transcript → frame extraction → OCR → optional vision → merge. Result includes the full Markdown plus downloadable artifacts.

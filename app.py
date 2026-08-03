@@ -189,6 +189,272 @@ def _convert_cleanup_loop() -> None:
 threading.Thread(target=_convert_cleanup_loop, daemon=True).start()
 
 
+# ---------------------------------------------------------------------------
+# Batch conversion — point at a local folder, convert every supported file,
+# saving each .md next to its original. Desktop app picks the folder via the
+# native dialog; typing an absolute path works too (the server is local).
+# ---------------------------------------------------------------------------
+
+SUPPORTED_BATCH_EXTS = {
+    ".pdf", ".docx", ".pptx", ".xlsx", ".xls",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp",
+    ".html", ".htm", ".epub",
+    ".mp3", ".wav", ".m4a",
+    ".csv", ".tsv", ".json", ".xml", ".ipynb", ".zip",
+}
+BATCH_MAX_FILES = 500
+
+_BATCH_JOBS: dict[str, dict] = {}
+_BATCH_QUEUES: dict[str, "queue.Queue"] = {}
+_BATCH_LOCK = threading.Lock()
+
+
+def _scan_folder(folder: Path, recursive: bool) -> list[Path]:
+    it = folder.rglob("*") if recursive else folder.glob("*")
+    out: list[Path] = []
+    for p in sorted(it):
+        if not p.is_file():
+            continue
+        # Skip hidden files and Office lock files (~$doc.docx)
+        if p.name.startswith(".") or p.name.startswith("~$"):
+            continue
+        if p.suffix.lower() in SUPPORTED_BATCH_EXTS:
+            out.append(p)
+    return out
+
+
+def _batch_emit(job_id: str, stage: str, pct: int, message: str) -> None:
+    with _BATCH_LOCK:
+        job = _BATCH_JOBS.get(job_id)
+        if job is None:
+            return
+        job["stage"], job["pct"], job["message"] = stage, pct, message
+    q = _BATCH_QUEUES.get(job_id)
+    if q:
+        q.put({"stage": stage, "pct": pct, "message": message})
+
+
+def _convert_one_file(
+    src: Path, use_ocr: bool, force_ocr: bool, langs: str, tmpdir: Path
+) -> str:
+    """Convert a single file to Markdown text. Raises RuntimeError on failure."""
+    target = src
+    if use_ocr and src.suffix.lower() == ".pdf":
+        if OCRMYPDF is None:
+            raise RuntimeError("ocrmypdf não está instalado")
+        ocred = tmpdir / f"ocr_{src.name}"
+        cmd = [OCRMYPDF, "-l", langs, "--optimize", "1"]
+        cmd.append("--force-ocr" if force_ocr else "--skip-text")
+        cmd += [str(src), str(ocred)]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"OCR falhou: {(proc.stderr or proc.stdout)[-500:]}")
+        target = ocred
+    proc = subprocess.run([MARKITDOWN, str(target)], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"markitdown falhou: {(proc.stderr or proc.stdout)[-500:]}"
+        )
+    return proc.stdout
+
+
+def _batch_pipeline(
+    job_id: str,
+    files: list[Path],
+    use_ocr: bool,
+    force_ocr: bool,
+    langs: str,
+    overwrite: bool,
+) -> None:
+    converted: list[str] = []
+    skipped: list[str] = []
+    failed: list[dict] = []
+    total = len(files)
+
+    try:
+        with tempfile.TemporaryDirectory() as raw:
+            tmpdir = Path(raw)
+            for i, src in enumerate(files):
+                pct = int((i / total) * 100) if total else 100
+                _batch_emit(
+                    job_id, "converting", pct, f"({i + 1}/{total}) {src.name}"
+                )
+                dest = src.with_suffix(".md")
+                if dest.exists() and not overwrite:
+                    skipped.append(str(src))
+                    continue
+                try:
+                    md = _convert_one_file(src, use_ocr, force_ocr, langs, tmpdir)
+                    dest.write_text(md, encoding="utf-8")
+                    converted.append(str(dest))
+                except Exception as e:  # noqa: BLE001 — one bad file must not kill the batch
+                    failed.append({"file": str(src), "error": str(e)})
+
+        with _BATCH_LOCK:
+            job = _BATCH_JOBS[job_id]
+            job["finished_at"] = time.time()
+            job["result"] = {
+                "total": total,
+                "converted": converted,
+                "skipped": skipped,
+                "failed": failed,
+            }
+        _batch_emit(
+            job_id,
+            "done",
+            100,
+            f"Concluído: {len(converted)} convertidos, "
+            f"{len(skipped)} pulados, {len(failed)} falhas.",
+        )
+    except Exception as e:  # noqa: BLE001
+        with _BATCH_LOCK:
+            job = _BATCH_JOBS.get(job_id)
+            if job is not None:
+                job["error"] = str(e)
+                job["finished_at"] = time.time()
+        _batch_emit(job_id, "failed", 0, str(e))
+
+
+@app.route("/batch/scan", methods=["POST"])
+def batch_scan():
+    data = request.get_json(silent=True) or {}
+    raw = (data.get("folder_path") or "").strip()
+    if not raw:
+        return jsonify({"error": "campo 'folder_path' obrigatório"}), 400
+    folder = Path(raw).expanduser()
+    if not folder.is_dir():
+        return jsonify({"error": f"pasta não encontrada: {folder}"}), 400
+    recursive = bool(data.get("recursive"))
+
+    files = _scan_folder(folder, recursive)
+    by_ext: dict[str, int] = {}
+    for f in files:
+        by_ext[f.suffix.lower()] = by_ext.get(f.suffix.lower(), 0) + 1
+    return jsonify(
+        {
+            "folder": str(folder),
+            "total": len(files),
+            "by_ext": dict(sorted(by_ext.items(), key=lambda kv: -kv[1])),
+            "over_limit": len(files) > BATCH_MAX_FILES,
+            "limit": BATCH_MAX_FILES,
+        }
+    )
+
+
+@app.route("/batch/start", methods=["POST"])
+def batch_start():
+    if not MARKITDOWN:
+        return jsonify({"error": "markitdown não está instalado no PATH"}), 500
+
+    data = request.get_json(silent=True) or {}
+    raw = (data.get("folder_path") or "").strip()
+    if not raw:
+        return jsonify({"error": "campo 'folder_path' obrigatório"}), 400
+    folder = Path(raw).expanduser()
+    if not folder.is_dir():
+        return jsonify({"error": f"pasta não encontrada: {folder}"}), 400
+
+    recursive = bool(data.get("recursive"))
+    overwrite = bool(data.get("overwrite"))
+    use_ocr = bool(data.get("use_ocr"))
+    force_ocr = bool(data.get("force_ocr"))
+    langs = (data.get("langs") or "por+eng").strip() or "por+eng"
+
+    if use_ocr and not OCRMYPDF:
+        return (
+            jsonify({"error": "OCR pedido mas ocrmypdf não está instalado no PATH"}),
+            500,
+        )
+
+    files = _scan_folder(folder, recursive)
+    if not files:
+        return jsonify({"error": "nenhum arquivo suportado encontrado na pasta"}), 400
+    if len(files) > BATCH_MAX_FILES:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        f"{len(files)} arquivos excedem o limite de "
+                        f"{BATCH_MAX_FILES} por lote. Divida em subpastas."
+                    )
+                }
+            ),
+            400,
+        )
+
+    job_id = uuid.uuid4().hex[:12]
+    with _BATCH_LOCK:
+        _BATCH_JOBS[job_id] = {
+            "stage": "queued",
+            "pct": 0,
+            "message": "",
+            "error": None,
+            "result": None,
+            "finished_at": None,
+        }
+        _BATCH_QUEUES[job_id] = queue.Queue()
+
+    threading.Thread(
+        target=_batch_pipeline,
+        args=(job_id, files, use_ocr, force_ocr, langs, overwrite),
+        daemon=True,
+    ).start()
+    return jsonify({"job_id": job_id, "total": len(files)})
+
+
+@app.route("/batch/status/<job_id>")
+def batch_status(job_id):
+    def stream():
+        q = _BATCH_QUEUES.get(job_id)
+        if q is None:
+            yield f"data: {json.dumps({'error': 'job desconhecido'})}\n\n"
+            return
+
+        job = _BATCH_JOBS.get(job_id)
+        if job:
+            yield (
+                f"data: {json.dumps({'stage': job['stage'], 'pct': job['pct'], 'message': job['message']})}\n\n"
+            )
+
+        while True:
+            try:
+                event = q.get(timeout=60.0)
+            except queue.Empty:
+                yield ": heartbeat\n\n"
+                j = _BATCH_JOBS.get(job_id)
+                if not j or j.get("finished_at") is not None:
+                    break
+                continue
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("stage") in ("done", "failed"):
+                break
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/batch/result/<job_id>")
+def batch_result(job_id):
+    job = _BATCH_JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "job desconhecido"}), 404
+    if job.get("error"):
+        return jsonify({"error": job["error"]}), 500
+    if not job.get("result"):
+        return (
+            jsonify({"error": "job ainda em andamento", "stage": job.get("stage")}),
+            425,
+        )
+    return jsonify(job["result"])
+
+
 @app.route("/")
 def index():
     return render_template("index.html")

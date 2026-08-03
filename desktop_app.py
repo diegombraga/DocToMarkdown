@@ -69,6 +69,20 @@ class Api:
             return None
         return result[0] if isinstance(result, (list, tuple)) else str(result)
 
+    def pick_folder(self) -> str | None:
+        win = webview.windows[0] if webview.windows else None
+        if win is None:
+            return None
+        try:
+            dialog_enum = getattr(webview, "FileDialog", None)
+            mode = dialog_enum.FOLDER if dialog_enum else webview.FOLDER_DIALOG
+            result = win.create_file_dialog(mode)
+        except Exception:
+            return None
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else str(result)
+
 
 def _pick_free_port(preferred: int = 5555) -> int:
     for candidate in (preferred, 0):
