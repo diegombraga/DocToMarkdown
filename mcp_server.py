@@ -35,7 +35,26 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
-from mcp.server.fastmcp import Context, FastMCP
+try:
+    from mcp.server.fastmcp import Context, FastMCP
+except ModuleNotFoundError as _e:  # pragma: no cover - environment guard
+    # mcp 2.x removed mcp.server.fastmcp (FastMCP moved to
+    # mcp.server.mcpserver with a different API). Fail with an actionable
+    # message instead of a bare traceback in the Claude Desktop log.
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        _installed = _pkg_version("mcp")
+    except Exception:  # noqa: BLE001
+        _installed = "unknown"
+    raise SystemExit(
+        "DocToMarkdown MCP requires the mcp 1.x API (mcp.server.fastmcp), "
+        f"but mcp {_installed} is installed.\n"
+        "Fix with:\n"
+        "  <runtime>/.venv/bin/pip install 'mcp[cli]>=1.2.0,<2.0'\n"
+        "or re-run the DocToMarkdown installer, which now pins it."
+    ) from _e
+
 from pydantic import Field
 
 # Ensure the video/ subpackage (with env config) is loadable regardless of cwd
