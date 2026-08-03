@@ -1545,7 +1545,7 @@ const resultRaw = $("result-raw");
 const artifactList = $("artifact-list");
 
 function showResult(md, filename, meta, artifacts, downloadUrl){
-  state.result = { md, filename, downloadUrl: downloadUrl || null };
+  state.result = { md, filename, downloadUrl: downloadUrl || null, metaBase: meta || "" };
   state.view = "rendered";
   resultMeta.textContent = meta || "";
   resultRendered.innerHTML = renderMarkdown(md);
@@ -1597,15 +1597,36 @@ $("btn-copy").addEventListener("click", async () => {
   setTimeout(() => btn.innerHTML = orig, 1300);
 });
 
-$("btn-download").addEventListener("click", () => {
+$("btn-download").addEventListener("click", async () => {
   if (!state.result) return;
-  // Prefer a server-backed attachment URL: pywebview's WebView2 backend
-  // silently drops blob-URL <a download> clicks unless the request comes
-  // from a real navigation with a Content-Disposition header.
-  if (state.result.downloadUrl){
+  const btn = $("btn-download");
+
+  // Desktop app: OS-native Save dialog — NEVER navigate the webview.
+  // (window.location.href to an attachment URL makes macOS WKWebView
+  // render the raw .md in place of the app, with no way back.)
+  if (window.pywebview){
+    try {
+      if (window.pywebview.api && window.pywebview.api.save_markdown){
+        const p = await window.pywebview.api.save_markdown(
+          state.result.md, state.result.filename || "documento.md");
+        if (p){
+          resultMeta.textContent = (state.result.metaBase || resultMeta.textContent)
+            .replace(/ · salvo em .*$/, "") + ` · salvo em ${p}`;
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<span style="color:#fff;">✓ Salvo!</span>';
+          setTimeout(() => btn.innerHTML = orig, 1300);
+        }
+        return; // cancelou = não faz nada; jamais navega
+      }
+    } catch {}
+    // Runtime antigo sem save_markdown: blob download (pode não abrir
+    // diálogo em todos os backends, mas nunca sequestra a janela).
+  } else if (state.result.downloadUrl){
+    // Navegador de verdade: attachment URL baixa sem sair da página.
     window.location.href = state.result.downloadUrl;
     return;
   }
+
   const blob = new Blob([state.result.md], { type:"text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

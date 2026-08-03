@@ -83,6 +83,38 @@ class Api:
             return None
         return result[0] if isinstance(result, (list, tuple)) else str(result)
 
+    def save_markdown(self, content: str, suggested_name: str = "documento.md") -> str | None:
+        """Open the OS-native Save dialog and write the Markdown there.
+
+        Replaces browser-style downloads inside the app: navigating the
+        webview to an attachment URL renders the raw file inline on macOS
+        (WKWebView) with no way back, hijacking the whole UI. A native
+        Save dialog never leaves the page. Returns the saved path, or
+        None when the user cancels.
+        """
+        win = webview.windows[0] if webview.windows else None
+        if win is None:
+            return None
+        if not suggested_name.lower().endswith(".md"):
+            suggested_name += ".md"
+        try:
+            dialog_enum = getattr(webview, "FileDialog", None)
+            mode = dialog_enum.SAVE if dialog_enum else webview.SAVE_DIALOG
+            result = win.create_file_dialog(mode, save_filename=suggested_name)
+        except Exception:
+            return None
+        if not result:
+            return None
+        path = result[0] if isinstance(result, (list, tuple)) else str(result)
+        try:
+            target = Path(path)
+            if not target.suffix:
+                target = target.with_suffix(".md")
+            target.write_text(content, encoding="utf-8")
+            return str(target)
+        except OSError:
+            return None
+
 
 def _pick_free_port(preferred: int = 5555) -> int:
     for candidate in (preferred, 0):
