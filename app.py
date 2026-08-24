@@ -725,6 +725,77 @@ def settings_keys_delete(provider):
 
 
 # ---------------------------------------------------------------------------
+# Maintenance — yt-dlp goes stale fast. YouTube rotates its delivery scheme
+# every few weeks and an aging yt-dlp starts returning 403 on media URLs
+# while metadata still resolves fine. Expose version + one-click upgrade so
+# users don't have to re-run the whole installer for it.
+# ---------------------------------------------------------------------------
+
+
+@app.route("/settings/ytdlp", methods=["GET"])
+def settings_ytdlp_get():
+    try:
+        import yt_dlp
+
+        installed = yt_dlp.version.__version__
+    except Exception:  # noqa: BLE001
+        installed = None
+    return jsonify({"installed": installed})
+
+
+@app.route("/settings/ytdlp/update", methods=["POST"])
+def settings_ytdlp_update():
+    """Upgrade yt-dlp inside this app's own interpreter environment."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Timeout ao atualizar (5 min)."}), 500
+    if proc.returncode != 0:
+        return (
+            jsonify(
+                {
+                    "error": "pip falhou ao atualizar yt-dlp",
+                    "log": (proc.stderr or proc.stdout)[-1500:],
+                }
+            ),
+            500,
+        )
+
+    # Read the new version from a fresh interpreter: the running process
+    # still holds the old module in sys.modules.
+    version = None
+    try:
+        probe = subprocess.run(
+            [sys.executable, "-c", "import yt_dlp; print(yt_dlp.version.__version__)"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if probe.returncode == 0:
+            version = probe.stdout.strip()
+    except Exception:  # noqa: BLE001
+        pass
+
+    return jsonify(
+        {
+            "ok": True,
+            "version": version,
+            "restart_required": True,
+            "message": (
+                "yt-dlp atualizado"
+                + (f" para {version}" if version else "")
+                + ". Feche e reabra o app para usar a versão nova."
+            ),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # Video pipeline routes
 # ---------------------------------------------------------------------------
 

@@ -45,6 +45,50 @@ class VideoMeta:
         }
 
 
+class StaleExtractorError(RuntimeError):
+    """yt-dlp is too old for the site's current delivery scheme.
+
+    YouTube rotates the signature/throttling scheme every few weeks; an
+    aging yt-dlp keeps resolving metadata fine and then gets 403 on the
+    media URLs. The raw "HTTP Error 403: Forbidden" tells the user
+    nothing, so we translate it into the actual fix.
+    """
+
+
+_STALE_MARKERS = (
+    "http error 403",
+    "unable to download video data",
+    "unable to download webpage: http error 403",
+    "sign in to confirm you're not a bot",
+    "requested format is not available",
+    "nsig extraction failed",
+    "unable to extract",
+)
+
+
+def explain_download_error(err: Exception) -> str:
+    """Turn a yt-dlp failure into something the user can act on."""
+    raw = str(err)
+    low = raw.lower()
+    if any(m in low for m in _STALE_MARKERS):
+        try:
+            current = yt_dlp.version.__version__
+        except Exception:  # noqa: BLE001
+            current = "desconhecida"
+        return (
+            "O YouTube recusou o download (HTTP 403). Isso quase sempre significa "
+            f"que o yt-dlp está desatualizado — a versão instalada é {current}, e o "
+            "YouTube muda o esquema de entrega a cada poucas semanas.\n\n"
+            "Atualize em ⚙ Configurações › 'Atualizar yt-dlp', ou pelo terminal:\n"
+            '  "$HOME/Library/Application Support/DocToMarkdown/.venv/bin/pip" '
+            "install --upgrade yt-dlp\n\n"
+            "Se já estiver na versão mais recente, o vídeo pode exigir login "
+            "(privado, restrito por idade ou regional).\n\n"
+            f"Erro original: {raw[:300]}"
+        )
+    return raw
+
+
 def probe(url: str) -> VideoMeta:
     """Fast metadata probe — does not download the media."""
     opts = {
@@ -132,12 +176,28 @@ def download_video(
     url: str,
     out_dir: Path,
     on_progress: Callable[[str, int, str], None] | None = None,
+    max_height: int | None = None,
 ) -> Path:
-    """Download the best video+audio muxed to MP4."""
+    """Download video+audio muxed to MP4.
+
+    `max_height` caps the vertical resolution. Pass it when the file is
+    only an intermediate for frame extraction: uncapped, `bestvideo`
+    happily picks a 4K AV1 stream — over a gigabyte for a 40-minute talk
+    — when 720p is already more than enough to OCR on-screen text and
+    describe scenes. Leave it None when the user asked to keep the MP4.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(out_dir / "video.%(ext)s")
+    if max_height:
+        h = int(max_height)
+        fmt = (
+            f"bestvideo[ext=mp4][height<={h}]+bestaudio[ext=m4a]/"
+            f"best[ext=mp4][height<={h}]/best[height<={h}]/best"
+        )
+    else:
+        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": fmt,
         "outtmpl": output_template,
         "merge_output_format": "mp4",
         "quiet": True,

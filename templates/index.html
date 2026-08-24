@@ -778,6 +778,21 @@
       </div>
 
       <div class="status-line" id="settings-status" style="padding:0 24px 22px;"></div>
+
+      <div class="provider" style="border-top:1px solid var(--divider);">
+        <div class="provider-head">
+          <div class="provider-name">Manutenção — yt-dlp</div>
+          <span class="provider-status" id="st-ytdlp"><span class="dot"></span><span>verificando…</span></span>
+        </div>
+        <div class="provider-desc">
+          O YouTube muda o esquema de entrega a cada poucas semanas. Quando o download
+          falhar com <strong>403 Forbidden</strong>, atualize aqui.
+        </div>
+        <div class="provider-row">
+          <button class="btn-ghost" id="btn-update-ytdlp" type="button">Atualizar yt-dlp</button>
+        </div>
+        <div class="status-line" id="ytdlp-status" style="margin-top:8px;"></div>
+      </div>
     </div>
   </div>
 
@@ -1639,7 +1654,53 @@ $("btn-download").addEventListener("click", async () => {
    Settings modal
    ═════════════════════════════════════════════════════════════ */
 const modal = $("settings-modal");
-$("open-settings").addEventListener("click", () => { modal.classList.add("open"); refreshKeyStatus(); });
+$("open-settings").addEventListener("click", () => {
+  modal.classList.add("open");
+  refreshKeyStatus();
+  refreshYtdlpStatus();
+});
+
+/* --- Manutenção: yt-dlp --- */
+async function refreshYtdlpStatus(){
+  const el = $("st-ytdlp");
+  try {
+    const s = await fetch("/settings/ytdlp").then(r => r.json());
+    if (s.installed){
+      el.className = "provider-status ok";
+      el.innerHTML = `<span class="dot"></span><span>versão ${esc(s.installed)}</span>`;
+    } else {
+      el.className = "provider-status";
+      el.innerHTML = `<span class="dot"></span><span>não instalado</span>`;
+    }
+  } catch {
+    el.className = "provider-status";
+    el.innerHTML = `<span class="dot"></span><span>indisponível</span>`;
+  }
+}
+
+$("btn-update-ytdlp").addEventListener("click", async () => {
+  const btn = $("btn-update-ytdlp");
+  const st = $("ytdlp-status");
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "Atualizando…";
+  st.className = "status-line busy";
+  st.textContent = "Baixando a versão mais recente (pode levar 1-2 min)…";
+  try {
+    const res = await fetch("/settings/ytdlp/update", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao atualizar");
+    st.className = "status-line ok";
+    st.textContent = data.message || "Atualizado.";
+    refreshYtdlpStatus();
+  } catch (err){
+    st.className = "status-line err";
+    st.textContent = "Erro: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
 $("close-settings").addEventListener("click", () => modal.classList.remove("open"));
 modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("open"); });
 

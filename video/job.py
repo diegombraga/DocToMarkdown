@@ -174,20 +174,31 @@ class JobManager:
             )
 
         emit("downloading", 8, "Baixando áudio…")
-        audio_path = downloader.download_audio(url, work_dir, on_progress=emit)
+        try:
+            audio_path = downloader.download_audio(url, work_dir, on_progress=emit)
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(downloader.explain_download_error(e)) from e
         if want_audio:
             shutil.copy2(audio_path, artifacts_dir / "audio.mp3")
 
         video_path: Path | None = None
         if want_video:
             emit("downloading", 20, "Baixando vídeo…")
-            video_path = downloader.download_video(url, work_dir, on_progress=emit)
+            try:
+                video_path = downloader.download_video(url, work_dir, on_progress=emit)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(downloader.explain_download_error(e)) from e
             shutil.copy2(video_path, artifacts_dir / video_path.name)
         else:
-            # We still need frames — download a lightweight version
-            # (yt-dlp defaults to a reasonable format)
-            emit("downloading", 20, "Baixando vídeo (temporário para frames)…")
-            video_path = downloader.download_video(url, work_dir, on_progress=emit)
+            # Frames only: cap at 720p. Uncapped this pulls the 4K stream —
+            # gigabytes and minutes for pixels no OCR or vision pass needs.
+            emit("downloading", 20, "Baixando vídeo (temporário para frames, até 720p)…")
+            try:
+                video_path = downloader.download_video(
+                    url, work_dir, on_progress=emit, max_height=720
+                )
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(downloader.explain_download_error(e)) from e
 
         # -- Phase 2: transcript
         transcript: list[transcriber.TranscriptSegment] = []

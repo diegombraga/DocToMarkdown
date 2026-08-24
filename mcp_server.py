@@ -484,13 +484,18 @@ async def process_video(
         try:
             audio = await asyncio.to_thread(vdl.download_audio, url, work)
         except Exception as e:  # noqa: BLE001
-            return {"error": f"downloading audio failed: {e}"}
+            return {"error": vdl.explain_download_error(e)}
 
         await ctx.report_progress(20, 100, "Baixando vídeo…")
+        # Cap at 720p unless the user is keeping the MP4 — frame OCR and
+        # vision descriptions gain nothing from a multi-gigabyte 4K stream.
+        _max_h = None if save_video else 720
         try:
-            video_path = await asyncio.to_thread(vdl.download_video, url, work)
+            video_path = await asyncio.to_thread(
+                vdl.download_video, url, work, None, _max_h
+            )
         except Exception as e:  # noqa: BLE001
-            return {"error": f"downloading video failed: {e}"}
+            return {"error": vdl.explain_download_error(e)}
 
         # Transcript
         await ctx.report_progress(35, 100, "Obtendo transcrição…")
